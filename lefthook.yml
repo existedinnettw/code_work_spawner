@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    format:
+      run: dart format --output=none --set-exit-if-changed .
+    analyze:
+      run: dart analyze
+    test:
+      run: dart test

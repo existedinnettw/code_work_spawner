@@ -10,8 +10,7 @@ issue comments, and uses configured CLI responders such as `codex`,
 - a new comment changes the thread enough that the responder decides a reply is
   useful
 
-It supports multi-repo configuration, responder fallback chains, Drift-backed
-SQLite state, and BDD-style Dart tests.
+It supports multi-repo configuration, responder fallback chains.
 
 ## Features
 
@@ -93,9 +92,17 @@ dart run bin/code_work_spawner.dart \
 ## Testing
 
 ```bash
-dart test
+dart run tool/validate_gherkin_test_format.dart
 dart analyze
+dart test
 ```
+
+All Dart tests under `test/` must follow the repo's Gherkin doc-comment format:
+
+- `group(...)` has a `Feature` doc block above it
+- `test(...)` has a `Scenario` doc block above it
+- runtime names stay plain, without `Feature:` or `Scenario:` prefixes
+- test bodies include `Given` / `When` / `Then` inline comments
 
 ## ref
 

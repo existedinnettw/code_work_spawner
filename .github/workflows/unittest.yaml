@@ -1,0 +1,24 @@
+name: unittest
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Static analysis
+        run: dart analyze
+
+      - name: Validate Gherkin test format
+        run: dart run tool/validate_gherkin_test_format.dart
+
+      - name: Run tests
+        run: dart test

@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "skills": {
+    "create-github-action-workflow-specification": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "527e6c77d921d58a9d0059aa95d0d14b441d2166f9c20518263048a56ca8fbbb"
+    },
+    "dart-api-design": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "d60beeedc91e1be7c51d7fea38acb636c0519b8140159402afcf69f31846cfba"
+    },
+    "dart-async-programming": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "ebff987d2ce82a0c0eebab1b7ebc724d29bb925c56273ee55775550d634a3c72"
+    },
+    "dart-code-generation": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "259e371481a822984e666cc5214c97ac1581a0adbbdb4d7cab3997c9b1de2009"
+    },
+    "dart-compilation-deployment": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "862ea7fd5efb9bd9760d9eab58880a1f08bb9b64125f171b778ba6918f79980f"
+    },
+    "dart-concurrency-isolates": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "829a819bb37342813eca318e0008d93db83aa313daa58be1b9a508d5b1674a9f"
+    },
+    "dart-documentation": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "0016010518730eb2aeaabbf5046667deb724040be855a5892db4a9735608ca75"
+    },
+    "dart-effective-style": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "ceaa8cbe82090bf759d763cdc83aa80df79ac2461d0d5f223f63e72f60901ae4"
+    },
+    "dart-idiomatic-usage": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "ac383cc321ce8eeac6412eecc466e68adfcb131fd98c5b74af9d4b33c64381bf"
+    },
+    "dart-language-syntax": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "d1b1f4027530bb736247f62135845c06f69148cd3464fc235f942324499aee54"
+    },
+    "dart-migration-versioning": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "c3fefb316b55d7794a49bc226cee17a2fafc00d75621e23aee1dd3f8c15def3a"
+    },
+    "dart-native-interop-ffi": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "cac814c48f43b964471b41e99622b471203bb2900845bcc03eca02b2a3162ed5"
+    },
+    "dart-package-management": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "a1fbb5422c3d9bf980a310b55f8cb938b969234eda60a27038f65833e5d0e805"
+    },
+    "dart-static-analysis": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "f13d7c751ed2d026da741fe7b2535fb11a8d045c48ee91b48c0bf7b8147a3758"
+    },
+    "dart-testing": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "c6857b34f27d704eadbb770e40512693e18e04bab7345c23818386a6996dea6a"
+    },
+    "dart-web-development": {
+      "source": "dart-lang/skills",
+      "sourceType": "github",
+      "computedHash": "2adc4b77a7d30a2c9c52fc96368df10a8242512c95c8bf2b3fc06abf208dc421"
+    },
+    "gh-cli": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "cbe644b0c6760ae2a1eaafa39133920d889331327065d92a131675a665273e56"
+    }
+  }
+}

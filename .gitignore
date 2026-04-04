@@ -4,3 +4,10 @@
 pubspec.lock
 .code_work_spawner.sqlite3
 agent-orchestrator.yaml
+/.*
+# !/.agents
+!/.git
+!/.github
+/skills/*
+!/skills/dart-gherkin-tests
+

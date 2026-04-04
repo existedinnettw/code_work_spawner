@@ -9,16 +9,26 @@ import 'package:test/test.dart';
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
+  /// ```gherkin
+  /// Feature: AppConfig loading
+  ///
+  ///   As a user of the Code Work Spawner
+  ///   I want the app configuration to correctly merge defaults with project-specific overrides
+  ///   So that I can specify common settings once and customize only what differs for each project
+  /// ```
   group('AppConfig.load', () {
-    test(
-      'given AO style config when loading then defaults and project overrides are merged',
-      () async {
-        // Given a config file with shared defaults and a project override.
-        final tempDir = await Directory.systemTemp.createTemp('cws-config-');
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
-        await configFile.writeAsString('''
+    /// ```gherkin
+    /// Scenario: Merge defaults with project overrides
+    ///   Given AO style config with shared defaults and one project override
+    ///   When loading the app config from disk
+    ///   Then the project keeps inherited defaults that were not overridden
+    ///   And the project-specific prompt replaces the shared prompt
+    /// ```
+    test('Merge defaults with project overrides', () async {
+      // Given AO style config with shared defaults and one project override.
+      final tempDir = await Directory.systemTemp.createTemp('cws-config-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
 defaults:
   issueAssistant:
     enabled: true
@@ -37,107 +47,97 @@ projects:
       prompt: "project {{project_key}}"
 ''');
 
-        // When the app config is loaded from disk.
-        final config = await AppConfig.load(configFile.path);
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
 
-        // Then the project inherits defaults and overrides only the prompt.
-        expect(config.projects['sample'], isNotNull);
-        expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
-          '@helper',
-        ]);
-        expect(
-          config.projects['sample']!.issueAssistant.prompt,
-          'project {{project_key}}',
-        );
-        expect(
-          config.projects['sample']!.issueAssistant.responders.single.id,
-          'fallback',
-        );
-      },
-    );
+      // Then the project keeps inherited defaults that were not overridden.
+      expect(config.projects['sample'], isNotNull);
+      expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
+        '@helper',
+      ]);
+      expect(
+        config.projects['sample']!.issueAssistant.responders.single.id,
+        'fallback',
+      );
+
+      // And the project-specific prompt replaces the shared prompt.
+      expect(
+        config.projects['sample']!.issueAssistant.prompt,
+        'project {{project_key}}',
+      );
+    });
   });
 
+  /// ```gherkin
+  /// Feature: Issue thread assistant polling
+  ///
+  ///   As a maintainer using the issue assistant
+  ///   I want issue thread events to be evaluated through configured responders
+  ///   So that users get help only when the thread actually needs a response
+  /// ```
   group('IssueAssistantApp.runOnce', () {
-    test(
-      'given an explicit mention when polling then the app posts the responder reply once',
-      () async {
-        // Given a fake gh client and a fake responder that emits a planning reply.
-        final sandbox = await Directory.systemTemp.createTemp('cws-run-');
-        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-        await _initGitRepo(repoDir);
+    /// ```gherkin
+    /// Scenario: Reply once when a user explicitly mentions the assistant
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing a comment with an explicit assistant mention
+    ///   And a responder that emits a planning reply
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then it reads issue comments and posts exactly one reply for that issue
+    /// ```
+    test('Reply once when a user explicitly mentions the assistant', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp('cws-run-');
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await _initGitRepo(repoDir);
 
-        final ghScript = File(p.join(sandbox.path, 'gh'));
-        final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
-        final issueData = [
-          {
-            'number': 12,
-            'title': 'Need architecture help',
-            'body': 'Please review the API layering.',
-            'state': 'open',
-            'html_url': 'https://example.test/issues/12',
-            'updated_at': '2026-04-04T12:00:00Z',
-            'user': {'login': 'reporter'},
-            'labels': [
-              {'name': 'help'},
-            ],
-          },
-        ];
-        final commentsData = [
-          {
-            'id': 50,
-            'body': '@helper can you plan the architecture?',
-            'html_url': 'https://example.test/issues/12#issuecomment-50',
-            'created_at': '2026-04-04T12:00:00Z',
-            'updated_at': '2026-04-04T12:00:00Z',
-            'user': {'login': 'reporter'},
-          },
-        ];
-        final replyJson = jsonEncode({
-          'decision': 'reply',
-          'mode': 'planning',
-          'markdown': 'Plan:\n- separate service and persistence',
-          'summary': 'posted planning advice',
-        });
-        await ghScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "\$*" >> "${ghLog.path}"
-if [[ "\$1" == "api" && "\$4" == repos/owner/sample/issues\\?* ]]; then
-  cat <<'JSON'
-${jsonEncode(issueData)}
-JSON
-  exit 0
-fi
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/12/comments?per_page=100" ]]; then
-  cat <<'JSON'
-${jsonEncode(commentsData)}
-JSON
-  exit 0
-fi
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/12/comments" ]]; then
-  cat <<'JSON'
-{"id": 700, "html_url": "https://example.test/comment/700", "body": "posted"}
-JSON
-  exit 0
-fi
-echo "unexpected gh args: \$*" >&2
-exit 1
-''');
-        await Process.run('chmod', ['+x', ghScript.path]);
+      // And GitHub issue data containing a comment with an explicit assistant mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final issueData = [
+        {
+          'number': 12,
+          'title': 'Need architecture help',
+          'body': 'Please review the API layering.',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/12',
+          'updated_at': '2026-04-04T12:00:00Z',
+          'user': {'login': 'reporter'},
+          'labels': [
+            {'name': 'help'},
+          ],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 50,
+          'body': '@helper can you plan the architecture?',
+          'html_url': 'https://example.test/issues/12#issuecomment-50',
+          'created_at': '2026-04-04T12:00:00Z',
+          'updated_at': '2026-04-04T12:00:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await _writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {12: commentsData},
+        postCommentIssueNumber: 12,
+        ghLog: ghLog,
+      );
 
-        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
-        await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-cat >/dev/null
-cat <<'JSON'
-$replyJson
-JSON
-''');
-        await Process.run('chmod', ['+x', responderScript.path]);
+      // And a responder that emits a planning reply.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await _writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'Plan:\n- separate service and persistence',
+        'summary': 'posted planning advice',
+      });
 
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
-        await configFile.writeAsString('''
+      // And an orchestrator-style config pointing to the fake repo and responder.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
 defaults:
   issueAssistant:
     enabled: true
@@ -153,40 +153,47 @@ projects:
     path: ${repoDir.path}
     defaultBranch: main
 ''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
 
-        final config = await AppConfig.load(configFile.path);
-        final app = await IssueAssistantApp.open(
-          config: config,
-          databasePath: p.join(sandbox.path, 'state.sqlite3'),
-          ghCommand: ghScript.path,
-        );
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      await app.close();
 
-        // When the app processes a single polling cycle.
-        await app.runOnce();
-        await app.close();
+      // Then it reads issue comments and posts exactly one reply for that issue.
+      final logLines = await ghLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/12/comments'),
+            )
+            .length,
+        2,
+      );
+    });
 
-        // Then a GitHub comment is posted for the mentioned issue.
-        final logLines = await ghLog.readAsLines();
-        expect(
-          logLines
-              .where(
-                (line) =>
-                    line.contains('repos/owner/sample/issues/12/comments'),
-              )
-              .length,
-          2,
-        );
-      },
-    );
-
+    /// ```gherkin
+    /// Scenario: Record no reply when the responder decides the discussion is already sufficient
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data with a new comment that does not require another response
+    ///   And a responder that explicitly returns no_reply
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then it records the evaluation result as no_reply
+    ///   And it does not store a posted GitHub comment for that thread version
+    /// ```
     test(
-      'given a thread update without a useful delta when polling then the app records no reply',
+      'Record no reply when the responder decides the discussion is already sufficient',
       () async {
-        // Given a fake gh client and a responder that explicitly returns no_reply.
+        // Given a temporary project checkout that can be used as the local repo path.
         final sandbox = await Directory.systemTemp.createTemp('cws-no-reply-');
         final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
         await _initGitRepo(repoDir);
 
+        // And GitHub issue data with a new comment that does not require another response.
         final ghScript = File(p.join(sandbox.path, 'gh'));
         final issueData = [
           {
@@ -210,40 +217,21 @@ projects:
             'user': {'login': 'reporter'},
           },
         ];
-        final noReplyJson = jsonEncode({
+        await _writeFakeGhScript(
+          ghScript: ghScript,
+          issueListResponse: issueData,
+          commentResponses: {42: commentsData},
+        );
+
+        // And a responder that explicitly returns no_reply.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await _writeResponderScript(responderScript, {
           'decision': 'no_reply',
           'mode': 'planning',
           'summary': 'thread already resolved',
         });
-        await ghScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-if [[ "\$1" == "api" && "\$4" == repos/owner/sample/issues\\?* ]]; then
-  cat <<'JSON'
-${jsonEncode(issueData)}
-JSON
-  exit 0
-fi
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/42/comments?per_page=100" ]]; then
-  cat <<'JSON'
-${jsonEncode(commentsData)}
-JSON
-  exit 0
-fi
-echo "unexpected gh args: \$*" >&2
-exit 1
-''');
-        await Process.run('chmod', ['+x', ghScript.path]);
 
-        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
-        await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-cat >/dev/null
-cat <<'JSON'
-$noReplyJson
-JSON
-''');
-        await Process.run('chmod', ['+x', responderScript.path]);
-
+        // And an orchestrator-style config pointing to the fake repo and responder.
         final configFile = File(
           p.join(sandbox.path, 'agent-orchestrator.yaml'),
         );
@@ -261,25 +249,108 @@ projects:
     repo: owner/sample
     path: ${repoDir.path}
 ''');
-
         final app = await IssueAssistantApp.open(
           config: await AppConfig.load(configFile.path),
           databasePath: p.join(sandbox.path, 'state.sqlite3'),
           ghCommand: ghScript.path,
         );
 
-        // When a poll cycle evaluates the unchanged discussion.
+        // When the app processes one polling cycle.
         await app.runOnce();
         final thread = await app.database.findIssueThread('sample', 42);
         await app.close();
 
-        // Then the issue is marked as evaluated without storing a comment.
+        // Then it records the evaluation result as no_reply.
         expect(thread, isNotNull);
         expect(thread!.lastDecision, 'no_reply');
+
+        // And it does not store a posted GitHub comment for that thread version.
         expect(thread.lastCommentId, isNull);
       },
     );
   });
+}
+
+Future<void> _writeFakeGhScript({
+  required File ghScript,
+  required List<Map<String, Object?>> issueListResponse,
+  required Map<int, List<Map<String, Object?>>> commentResponses,
+  File? ghLog,
+  int? postCommentIssueNumber,
+}) async {
+  final buffer = StringBuffer()
+    ..writeln('#!/usr/bin/env bash')
+    ..writeln('set -euo pipefail');
+
+  if (ghLog != null) {
+    buffer.writeln(
+      r'''printf '%s\n' "$*" >> '''
+      '"${ghLog.path}"',
+    );
+  }
+
+  buffer
+    ..writeln(
+      r'''if [[ "$1" == "api" && "$4" == repos/owner/sample/issues\?* ]]; then''',
+    )
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode(issueListResponse))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  for (final entry in commentResponses.entries) {
+    buffer
+      ..writeln(
+        'if [[ "\$1" == "api" && "\$4" == '
+        '"repos/owner/sample/issues/${entry.key}/comments?per_page=100" ]]; then',
+      )
+      ..writeln("  cat <<'JSON'")
+      ..writeln(jsonEncode(entry.value))
+      ..writeln('JSON')
+      ..writeln('  exit 0')
+      ..writeln('fi');
+  }
+
+  if (postCommentIssueNumber != null) {
+    buffer
+      ..writeln(
+        'if [[ "\$1" == "api" && "\$4" == '
+        '"repos/owner/sample/issues/$postCommentIssueNumber/comments" ]]; then',
+      )
+      ..writeln("  cat <<'JSON'")
+      ..writeln(
+        jsonEncode({
+          'id': 700,
+          'html_url': 'https://example.test/comment/700',
+          'body': 'posted',
+        }),
+      )
+      ..writeln('JSON')
+      ..writeln('  exit 0')
+      ..writeln('fi');
+  }
+
+  buffer
+    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
+    ..writeln('exit 1');
+
+  await ghScript.writeAsString(buffer.toString());
+  await Process.run('chmod', ['+x', ghScript.path]);
+}
+
+Future<void> _writeResponderScript(
+  File responderScript,
+  Map<String, Object?> response,
+) async {
+  await responderScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+cat >/dev/null
+cat <<'JSON'
+${jsonEncode(response)}
+JSON
+''');
+  await Process.run('chmod', ['+x', responderScript.path]);
 }
 
 Future<void> _initGitRepo(Directory directory) async {
