@@ -1,10 +1,9 @@
 targets:
   $default:
-#     sources:
     builders:
       drift_dev:
         generate_for:
           - lib/src/database.dart
-      # json_serializable:
-      #   generate_for:
-      #     - lib/**/model/*.dart
+      json_serializable:
+        generate_for:
+          - lib/src/config_schema.dart
