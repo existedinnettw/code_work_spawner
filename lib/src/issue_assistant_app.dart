@@ -191,7 +191,7 @@ class IssueAssistantApp {
         'since=${since?.toUtc().toIso8601String() ?? "initial"}',
       );
       final issues = await githubClient.fetchUpdatedIssues(
-        repo: project.repo,
+        repo: project.repoSlug,
         since: since,
       );
       _log('project=${project.key} fetched_issues=${issues.length}');
@@ -273,7 +273,7 @@ class IssueAssistantApp {
     GitHubIssueSummary issue,
   ) async {
     final thread = await githubClient.fetchThread(
-      repo: project.repo,
+      repo: project.repoSlug,
       issue: issue,
     );
     final fingerprint = _fingerprintThread(thread);
@@ -465,7 +465,7 @@ class IssueAssistantApp {
       markdown: selectedResult.markdown,
     );
     final posted = await githubClient.createIssueComment(
-      repo: project.repo,
+      repo: project.repoSlug,
       issueNumber: issue.number,
       body: commentBody,
     );

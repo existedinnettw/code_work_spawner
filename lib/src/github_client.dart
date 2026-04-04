@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:github/github.dart';
+
 class GitHubClient {
   GitHubClient({this.ghCommand = 'gh'});
 
@@ -8,7 +10,7 @@ class GitHubClient {
   Future<String?>? _authenticatedLoginFuture;
 
   Future<List<GitHubIssueSummary>> fetchUpdatedIssues({
-    required String repo,
+    required RepositorySlug repo,
     required DateTime? since,
   }) async {
     final query = <String, String>{
@@ -23,7 +25,7 @@ class GitHubClient {
       'api',
       '-X',
       'GET',
-      'repos/$repo/issues${_encodeQuery(query)}',
+      _buildApiPath(repo, ['issues'], query),
     ]);
 
     return (json as List<dynamic>)
@@ -34,14 +36,18 @@ class GitHubClient {
   }
 
   Future<IssueThread> fetchThread({
-    required String repo,
+    required RepositorySlug repo,
     required GitHubIssueSummary issue,
   }) async {
     final comments = await _runJson([
       'api',
       '-X',
       'GET',
-      'repos/$repo/issues/${issue.number}/comments?per_page=100',
+      _buildApiPath(
+        repo,
+        ['issues', '${issue.number}', 'comments'],
+        {'per_page': '100'},
+      ),
     ]);
 
     return IssueThread(
@@ -54,7 +60,7 @@ class GitHubClient {
   }
 
   Future<PostedComment> createIssueComment({
-    required String repo,
+    required RepositorySlug repo,
     required int issueNumber,
     required String body,
   }) async {
@@ -62,7 +68,7 @@ class GitHubClient {
       'api',
       '-X',
       'POST',
-      'repos/$repo/issues/$issueNumber/comments',
+      _buildApiPath(repo, ['issues', '$issueNumber', 'comments']),
       '-f',
       'body=$body',
     ]);
@@ -109,19 +115,15 @@ class GitHubClient {
     return jsonDecode(stdoutText);
   }
 
-  String _encodeQuery(Map<String, String> query) {
-    if (query.isEmpty) {
-      return '';
-    }
-
-    final encoded = query.entries
-        .map(
-          (entry) =>
-              '${Uri.encodeQueryComponent(entry.key)}='
-              '${Uri.encodeQueryComponent(entry.value)}',
-        )
-        .join('&');
-    return '?$encoded';
+  String _buildApiPath(
+    RepositorySlug repo,
+    List<String> tailSegments, [
+    Map<String, String> query = const <String, String>{},
+  ]) {
+    return Uri(
+      pathSegments: ['repos', repo.owner, repo.name, ...tailSegments],
+      queryParameters: query.isEmpty ? null : query,
+    ).toString();
   }
 }
 

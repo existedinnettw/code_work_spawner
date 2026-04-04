@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:github/github.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
@@ -201,6 +202,7 @@ class ProjectConfig {
   ProjectConfig({
     required this.key,
     required this.repo,
+    required this.repoSlug,
     required this.path,
     required this.defaultBranch,
     required this.sessionPrefix,
@@ -209,6 +211,7 @@ class ProjectConfig {
 
   final String key;
   final String repo;
+  final RepositorySlug repoSlug;
   final String path;
   final String defaultBranch;
   final String sessionPrefix;
@@ -225,9 +228,11 @@ class ProjectConfig {
       ...defaultAssistantMap,
       ...assistantMap,
     };
+    final repo = map['repo']?.toString() ?? _missing('projects.$key.repo');
     return ProjectConfig(
       key: key,
-      repo: map['repo']?.toString() ?? _missing('projects.$key.repo'),
+      repo: repo,
+      repoSlug: _parseRepositorySlug(repo, field: 'projects.$key.repo'),
       path: _expandHome(
         map['path']?.toString() ?? _missing('projects.$key.path'),
       ),
@@ -247,6 +252,24 @@ class ProjectConfig {
 
   static String _missing(String field) {
     throw FormatException('Missing required config field: $field');
+  }
+
+  static RepositorySlug _parseRepositorySlug(
+    String value, {
+    required String field,
+  }) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      throw FormatException('Missing required config field: $field');
+    }
+
+    final parts = trimmed.split('/');
+    if (parts.length != 2 || parts.any((part) => part.trim().isEmpty)) {
+      throw FormatException(
+        'Invalid repository slug for $field: "$value". Expected owner/repo.',
+      );
+    }
+    return RepositorySlug(parts[0], parts[1]);
   }
 }
 

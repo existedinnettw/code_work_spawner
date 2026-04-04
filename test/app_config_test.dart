@@ -53,6 +53,8 @@ projects:
 
       // Then the project keeps inherited defaults that were not overridden.
       expect(config.projects['sample'], isNotNull);
+      expect(config.projects['sample']!.repoSlug.owner, 'owner');
+      expect(config.projects['sample']!.repoSlug.name, 'sample');
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
         '@helper',
       ]);
@@ -253,6 +255,41 @@ projects:
             (error) => error.message,
             'message',
             contains('Unsupported config field: projects.sample.tracker'),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Reject malformed repository slugs
+    ///   Given an orchestrator config whose project repo is not in owner/repo format
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear repository slug error
+    /// ```
+    test('Reject malformed repository slugs', () async {
+      // Given an orchestrator config whose project repo is not in owner/repo format.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-invalid-repo-slug-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    repo: owner
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final load = AppConfig.load(configFile.path);
+
+      // Then loading fails with a clear repository slug error.
+      await expectLater(
+        load,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('Invalid repository slug for projects.sample.repo'),
           ),
         ),
       );

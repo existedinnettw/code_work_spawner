@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:git/git.dart';
 import 'package:path/path.dart' as p;
 
 class WorkspaceManager {
@@ -18,11 +19,12 @@ class WorkspaceManager {
   };
 
   Future<String> createEphemeralWorktree(String projectPath) async {
+    final repository = await GitDir.fromExisting(projectPath);
     final parent = await _createWorktreeParent();
     final workspacePath = p.join(parent.path, 'repo');
     final command = [
       '-C',
-      projectPath,
+      repository.path,
       'worktree',
       'add',
       '--detach',
@@ -59,6 +61,7 @@ class WorkspaceManager {
   }
 
   Future<void> disposeEphemeralWorktree(String workspacePath) async {
+    await GitDir.fromExisting(workspacePath);
     final result = await _runGit([
       '-C',
       workspacePath,

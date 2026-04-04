@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:git/git.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> writeFakeGhScript({
@@ -162,7 +163,7 @@ JSON
 }
 
 Future<void> initGitRepo(Directory directory) async {
-  await runGit(['init'], workingDirectory: directory.path);
+  await GitDir.init(directory.path, allowContent: true);
   await runGit([
     'config',
     'user.email',
