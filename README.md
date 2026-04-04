@@ -1,2 +1,102 @@
 # code_work_spawner
-spawn multi agents to complete coding work
+
+GitHub issue thread assistant with Agent Orchestrator style config.
+
+The app polls configured GitHub repositories with `gh`, reads issue threads and
+issue comments, and uses configured CLI responders such as `codex`,
+`opencode`, or `copilot-cli` to reply when:
+
+- a user explicitly mentions the assistant
+- a new comment changes the thread enough that the responder decides a reply is
+  useful
+
+It supports multi-repo configuration, responder fallback chains, Drift-backed
+SQLite state, and BDD-style Dart tests.
+
+## Features
+
+- Agent Orchestrator style YAML config with `defaults` and `projects`
+- Multiple repositories in one process
+- Comment-triggered issue assistance
+- Planning / architecture guidance in issue threads
+- Bug verification flows in isolated temporary git worktrees
+- CLI-based responder fallback chain
+- Durable state with `drift` + SQLite
+- BDD-style tests using `package:test` with Given / When / Then wording
+
+## Requirements
+
+- Dart SDK 3.11+
+- `gh` CLI authenticated for the target repositories
+- Local checkouts for configured repositories
+- Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
+
+## Config
+
+Create a local `agent-orchestrator.yaml`:
+
+```yaml
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper", "@codex"]
+    commentTag: code-work-spawner
+    prompt: |
+      You are helping on {{repo}}.
+      Trigger: {{trigger}}
+      Thread:
+      {{thread_json}}
+    responders:
+      - id: codex
+        command: codex
+        args: ["exec", "--json-output"]
+        timeout: 10m
+      - id: opencode
+        command: opencode
+        timeout: 10m
+
+projects:
+  my-app:
+    repo: owner/my-app
+    path: ~/code/my-app
+    defaultBranch: main
+    sessionPrefix: app
+```
+
+Project entries can override `issueAssistant` fields when a repo needs a
+different prompt, mention triggers, or responder chain.
+
+## Run
+
+Single poll cycle:
+
+```bash
+dart run bin/code_work_spawner.dart --once
+```
+
+Long-running poller:
+
+```bash
+dart run bin/code_work_spawner.dart
+```
+
+Override paths when needed:
+
+```bash
+dart run bin/code_work_spawner.dart \
+  --config /path/to/agent-orchestrator.yaml \
+  --db /path/to/state.sqlite3 \
+  --gh-command /usr/bin/gh
+```
+
+## Testing
+
+```bash
+dart test
+dart analyze
+```
+
+## ref
+
+[agent-orchestrator](https://github.com/ComposioHQ/agent-orchestrator)
