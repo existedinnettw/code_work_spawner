@@ -277,9 +277,7 @@ class IssueAssistantApp {
           stderr: rawStderr,
         );
       } finally {
-        if (workspacePath != null) {
-          await workspaceManager.disposeEphemeralWorktree(workspacePath);
-        }
+        await workspaceManager.disposeEphemeralWorktree(workspacePath);
       }
     }
 
@@ -309,8 +307,10 @@ class IssueAssistantApp {
       return;
     }
 
-    final commentBody = _decorateComment(
-      tag: project.issueAssistant.commentTag,
+    final commentBody = await _decorateComment(
+      project: project,
+      issueNumber: issue.number,
+      trigger: trigger,
       fingerprint: fingerprint,
       markdown: selectedResult.markdown,
     );
@@ -406,12 +406,48 @@ class IssueAssistantApp {
     return sha256.convert(bytes).toString();
   }
 
-  String _decorateComment({
-    required String tag,
+  Future<String> _decorateComment({
+    required ProjectConfig project,
+    required int issueNumber,
+    required String trigger,
     required String fingerprint,
     required String markdown,
-  }) {
-    return '$markdown\n\n<!-- $tag:$fingerprint -->';
+  }) async {
+    var ghLogin = 'unknown';
+    try {
+      ghLogin = await githubClient.getAuthenticatedLogin() ?? 'unknown';
+    } catch (error) {
+      _log(
+        'comment_identity_lookup_failed project=${project.key} '
+        'issue=$issueNumber error=$error',
+      );
+    }
+
+    final templateValues = <String, String>{
+      'repo': project.repo,
+      'project_key': project.key,
+      'issue_number': issueNumber.toString(),
+      'trigger': trigger,
+      'comment_tag': project.issueAssistant.commentTag,
+      'fingerprint': fingerprint,
+      'gh_login': ghLogin,
+    };
+    final prefix = renderTemplate(
+      project.issueAssistant.commentPrefixTemplate,
+      templateValues,
+    ).trim();
+    final footer = renderTemplate(
+      project.issueAssistant.commentFooterTemplate,
+      templateValues,
+    ).trim();
+
+    final sections = <String>[
+      if (prefix.isNotEmpty) prefix,
+      markdown.trim(),
+      if (footer.isNotEmpty) footer,
+      '<!-- ${project.issueAssistant.commentTag}:$fingerprint -->',
+    ];
+    return sections.where((section) => section.isNotEmpty).join('\n\n');
   }
 
   void _log(String message) {

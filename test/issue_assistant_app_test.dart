@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
@@ -7,222 +6,10 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'test_support.dart';
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-
-  /// ```gherkin
-  /// Feature: AppConfig loading
-  ///
-  ///   As a user of the Code Work Spawner
-  ///   I want the app configuration to correctly merge defaults with project-specific overrides
-  ///   So that I can specify common settings once and customize only what differs for each project
-  /// ```
-  group('AppConfig.load', () {
-    /// ```gherkin
-    /// Scenario: Merge defaults with project overrides
-    ///   Given AO style config with shared defaults and one project override
-    ///   When loading the app config from disk
-    ///   Then the project keeps inherited defaults that were not overridden
-    ///   And the project-specific prompt replaces the shared prompt
-    /// ```
-    test('Merge defaults with project overrides', () async {
-      // Given AO style config with shared defaults and one project override.
-      final tempDir = await Directory.systemTemp.createTemp('cws-config-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    pollInterval: 5m
-    mentionTriggers: ["@helper"]
-    prompt: "default {{repo}}"
-    responders:
-      - id: fallback
-        command: responder
-projects:
-  sample:
-    repo: owner/sample
-    path: ${tempDir.path}
-    defaultBranch: main
-    issueAssistant:
-      prompt: "project {{project_key}}"
-''');
-
-      // When loading the app config from disk.
-      final config = await AppConfig.load(configFile.path);
-
-      // Then the project keeps inherited defaults that were not overridden.
-      expect(config.projects['sample'], isNotNull);
-      expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
-        '@helper',
-      ]);
-      expect(
-        config.projects['sample']!.issueAssistant.responders.single.id,
-        'fallback',
-      );
-
-      // And the project-specific prompt replaces the shared prompt.
-      expect(
-        config.projects['sample']!.issueAssistant.prompt,
-        'project {{project_key}}',
-      );
-    });
-
-    /// ```gherkin
-    /// Scenario: Normalize legacy codex json flag
-    ///   Given an orchestrator config that still uses the legacy codex --json-output flag
-    ///   When loading the app config from disk
-    ///   Then the responder args are normalized to the current codex --json flag
-    /// ```
-    test('Normalize legacy codex json flag', () async {
-      // Given an orchestrator config that still uses the legacy codex --json-output flag.
-      final tempDir = await Directory.systemTemp.createTemp('cws-codex-args-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    responders:
-      - id: codex
-        command: codex
-        args: ["exec", "--json-output"]
-projects:
-  sample:
-    repo: owner/sample
-    path: ${tempDir.path}
-''');
-
-      // When loading the app config from disk.
-      final config = await AppConfig.load(configFile.path);
-
-      // Then the responder args are normalized to the current codex --json flag.
-      expect(config.projects['sample']!.issueAssistant.responders.single.args, [
-        'exec',
-        '--json',
-      ]);
-    });
-
-    /// ```gherkin
-    /// Scenario: Load AO subset config with shared worktree root
-    ///   Given an AO style shortcut config with dataDir, worktreeDir, and project defaults
-    ///   When loading the app config from disk
-    ///   Then the app exposes the configured data and worktree directories
-    ///   And each project inherits the supported shared defaults
-    /// ```
-    test('Load AO subset config with shared worktree root', () async {
-      // Given an AO style shortcut config with dataDir, worktreeDir, and project defaults.
-      final tempDir = await Directory.systemTemp.createTemp('cws-ao-subset-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-dataDir: ~/.agent-orchestrator
-worktreeDir: ~/.worktrees
-defaults:
-  defaultBranch: trunk
-  sessionPrefix: ao
-projects:
-  sample:
-    repo: owner/sample
-    path: ${tempDir.path}
-''');
-
-      // When loading the app config from disk.
-      final config = await AppConfig.load(configFile.path);
-
-      // Then the app exposes the configured data and worktree directories.
-      expect(
-        config.dataDir,
-        p.join(Platform.environment['HOME']!, '.agent-orchestrator'),
-      );
-      expect(
-        config.worktreeDir,
-        p.join(Platform.environment['HOME']!, '.worktrees'),
-      );
-
-      // And each project inherits the supported shared defaults.
-      expect(config.projects['sample'], isNotNull);
-      expect(config.projects['sample']!.defaultBranch, 'trunk');
-      expect(config.projects['sample']!.sessionPrefix, 'ao');
-      expect(config.projects['sample']!.issueAssistant.enabled, isTrue);
-    });
-
-    /// ```gherkin
-    /// Scenario: Reject unsupported AO fields
-    ///   Given an AO style config that includes an unsupported field
-    ///   When loading the app config from disk
-    ///   Then loading fails with a clear config error
-    /// ```
-    test('Reject unsupported AO fields', () async {
-      // Given an AO style config that includes an unsupported field.
-      final tempDir = await Directory.systemTemp.createTemp('cws-ao-invalid-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-worktreeDir: ~/.worktrees
-projects:
-  sample:
-    repo: owner/sample
-    path: ${tempDir.path}
-    tracker:
-      plugin: github
-''');
-
-      // When loading the app config from disk.
-      final load = AppConfig.load(configFile.path);
-
-      // Then loading fails with a clear config error.
-      await expectLater(
-        load,
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message',
-            contains('Unsupported config field: projects.sample.tracker'),
-          ),
-        ),
-      );
-    });
-  });
-
-  /// ```gherkin
-  /// Feature: Worktree management
-  ///
-  ///   As a maintainer running bug verification jobs
-  ///   I want ephemeral git worktrees to respect the configured worktree root
-  ///   So that temporary workspaces are created in a predictable location
-  /// ```
-  group('WorkspaceManager.createEphemeralWorktree', () {
-    /// ```gherkin
-    /// Scenario: Create and dispose a worktree under the configured root
-    ///   Given a git repository and a dedicated worktree root directory
-    ///   When creating and then disposing an ephemeral worktree
-    ///   Then the worktree is created beneath the configured root
-    ///   And cleanup removes the generated worktree directory without deleting the root
-    /// ```
-    test('Create and dispose a worktree under the configured root', () async {
-      // Given a git repository and a dedicated worktree root directory.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-worktree-root-',
-      );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      final worktreeRoot = await Directory(
-        p.join(sandbox.path, 'worktrees'),
-      ).create();
-      await _initGitRepo(repoDir);
-      final manager = WorkspaceManager(worktreeRoot: worktreeRoot.path);
-
-      // When creating and then disposing an ephemeral worktree.
-      final workspacePath = await manager.createEphemeralWorktree(repoDir.path);
-      final workspaceDirectory = Directory(workspacePath);
-      final parentDirectory = Directory(p.dirname(workspacePath));
-      await manager.disposeEphemeralWorktree(workspacePath);
-
-      // Then the worktree is created beneath the configured root.
-      expect(p.isWithin(worktreeRoot.path, workspacePath), isTrue);
-
-      // And cleanup removes the generated worktree directory without deleting the root.
-      expect(await workspaceDirectory.exists(), isFalse);
-      expect(await parentDirectory.exists(), isFalse);
-      expect(await worktreeRoot.exists(), isTrue);
-    });
-  });
 
   /// ```gherkin
   /// Feature: Issue thread assistant polling
@@ -245,11 +32,12 @@ projects:
       // Given a temporary project checkout that can be used as the local repo path.
       final sandbox = await Directory.systemTemp.createTemp('cws-run-');
       final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await _initGitRepo(repoDir);
+      await initGitRepo(repoDir);
 
       // And GitHub issue data containing a comment with an explicit assistant mention.
       final ghScript = File(p.join(sandbox.path, 'gh'));
       final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
       final issueData = [
         {
           'number': 12,
@@ -274,17 +62,19 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await _writeFakeGhScript(
+      await writeFakeGhScript(
         ghScript: ghScript,
         issueListResponse: issueData,
         commentResponses: {12: commentsData},
         postCommentIssueNumber: 12,
         ghLog: ghLog,
+        postedBodyFile: postedBody,
+        viewerLogin: 'octocat',
       );
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
-      await _writeResponderScript(responderScript, {
+      await writeResponderScript(responderScript, {
         'decision': 'reply',
         'mode': 'planning',
         'markdown': 'Plan:\n- separate service and persistence',
@@ -329,6 +119,16 @@ projects:
             .length,
         2,
       );
+      final postedComment = await postedBody.readAsString();
+      expect(postedComment, contains('> [!NOTE]'));
+      expect(postedComment, contains('Automated reply generated by'));
+      expect(postedComment, contains('@octocat'));
+      expect(
+        postedComment,
+        contains('Plan:\n- separate service and persistence'),
+      );
+      expect(postedComment, contains('_Automation note:'));
+      expect(postedComment, contains('<!-- code-work-spawner:'));
     });
 
     /// ```gherkin
@@ -347,7 +147,7 @@ projects:
         // Given a temporary project checkout that can be used as the local repo path.
         final sandbox = await Directory.systemTemp.createTemp('cws-no-reply-');
         final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-        await _initGitRepo(repoDir);
+        await initGitRepo(repoDir);
 
         // And GitHub issue data with a new comment that does not require another response.
         final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -373,7 +173,7 @@ projects:
             'user': {'login': 'reporter'},
           },
         ];
-        await _writeFakeGhScript(
+        await writeFakeGhScript(
           ghScript: ghScript,
           issueListResponse: issueData,
           commentResponses: {42: commentsData},
@@ -381,7 +181,7 @@ projects:
 
         // And a responder that explicitly returns no_reply.
         final responderScript = File(p.join(sandbox.path, 'responder.sh'));
-        await _writeResponderScript(responderScript, {
+        await writeResponderScript(responderScript, {
           'decision': 'no_reply',
           'mode': 'planning',
           'summary': 'thread already resolved',
@@ -439,7 +239,7 @@ projects:
       // Given a temporary project checkout that can be used as the local repo path.
       final sandbox = await Directory.systemTemp.createTemp('cws-log-output-');
       final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await _initGitRepo(repoDir);
+      await initGitRepo(repoDir);
 
       // And GitHub issue data containing an explicit assistant mention.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -465,7 +265,7 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await _writeFakeGhScript(
+      await writeFakeGhScript(
         ghScript: ghScript,
         issueListResponse: issueData,
         commentResponses: {21: commentsData},
@@ -474,7 +274,7 @@ projects:
 
       // And a responder that writes stderr diagnostics alongside a no_reply JSON payload.
       final responderScript = File(p.join(sandbox.path, 'responder-debug.sh'));
-      await _writeResponderScript(responderScript, {
+      await writeResponderScript(responderScript, {
         'decision': 'no_reply',
         'mode': 'planning',
         'summary': 'diagnostic skip',
@@ -538,7 +338,7 @@ projects:
         'cws-mention-worktree-',
       );
       final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await _initGitRepo(repoDir);
+      await initGitRepo(repoDir);
 
       // And GitHub issue data containing an explicit assistant mention.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -565,7 +365,7 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await _writeFakeGhScript(
+      await writeFakeGhScript(
         ghScript: ghScript,
         issueListResponse: issueData,
         commentResponses: {24: commentsData},
@@ -651,7 +451,7 @@ projects:
       // Given a temporary project checkout that can be used as the local repo path.
       final sandbox = await Directory.systemTemp.createTemp('cws-jsonl-run-');
       final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await _initGitRepo(repoDir);
+      await initGitRepo(repoDir);
 
       // And GitHub issue data containing an explicit assistant mention.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -678,7 +478,7 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await _writeFakeGhScript(
+      await writeFakeGhScript(
         ghScript: ghScript,
         issueListResponse: issueData,
         commentResponses: {18: commentsData},
@@ -688,7 +488,7 @@ projects:
 
       // And a responder that emits codex style jsonl events instead of a single json object.
       final responderScript = File(p.join(sandbox.path, 'responder-jsonl.sh'));
-      await _writeJsonlResponderScript(responderScript, {
+      await writeJsonlResponderScript(responderScript, {
         'decision': 'reply',
         'mode': 'planning',
         'markdown': 'Codex JSONL reply',
@@ -734,6 +534,238 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Cache authenticated gh login across multiple replies
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing two issues that explicitly mention the assistant
+    ///   And a responder that replies to both issues
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then it looks up the authenticated gh login only once
+    ///   And it still posts one comment per issue
+    /// ```
+    test('Cache authenticated gh login across multiple replies', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp('cws-gh-cache-');
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And GitHub issue data containing two issues that explicitly mention the assistant.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final issueData = [
+        {
+          'number': 31,
+          'title': 'First mention',
+          'body': 'first',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/31',
+          'updated_at': '2026-04-04T16:00:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+        {
+          'number': 32,
+          'title': 'Second mention',
+          'body': 'second',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/32',
+          'updated_at': '2026-04-04T16:01:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      await writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {
+          31: [
+            {
+              'id': 310,
+              'body': '@helper first',
+              'html_url': 'https://example.test/issues/31#issuecomment-310',
+              'created_at': '2026-04-04T16:00:00Z',
+              'updated_at': '2026-04-04T16:00:00Z',
+              'user': {'login': 'reporter'},
+            },
+          ],
+          32: [
+            {
+              'id': 320,
+              'body': '@helper second',
+              'html_url': 'https://example.test/issues/32#issuecomment-320',
+              'created_at': '2026-04-04T16:01:00Z',
+              'updated_at': '2026-04-04T16:01:00Z',
+              'user': {'login': 'reporter'},
+            },
+          ],
+        },
+        postCommentIssueNumbers: {31, 32},
+        ghLog: ghLog,
+        viewerLogin: 'octocat',
+      );
+
+      // And a responder that replies to both issues.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'cached login reply',
+        'summary': 'posted',
+      });
+
+      // And an orchestrator-style config pointing to the fake repo and responder.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      await app.close();
+
+      // Then it looks up the authenticated gh login only once.
+      final logLines = await ghLog.readAsLines();
+      expect(logLines.where((line) => line == 'api user').length, 1);
+
+      // And it still posts one comment per issue.
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/31/comments'),
+            )
+            .length,
+        2,
+      );
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/32/comments'),
+            )
+            .length,
+        2,
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Fall back to unknown identity when gh user lookup fails
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing an explicit assistant mention
+    ///   And a responder that emits a planning reply
+    ///   And a fake gh command that fails the authenticated user lookup
+    ///   When the app processes one polling cycle
+    ///   Then it still posts one comment
+    ///   And the visible automation markers use the unknown identity fallback
+    /// ```
+    test('Fall back to unknown identity when gh user lookup fails', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp('cws-gh-fallback-');
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And GitHub issue data containing an explicit assistant mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
+      final issueData = [
+        {
+          'number': 33,
+          'title': 'Fallback identity',
+          'body': 'identity',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/33',
+          'updated_at': '2026-04-04T16:10:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 330,
+          'body': '@helper who are you?',
+          'html_url': 'https://example.test/issues/33#issuecomment-330',
+          'created_at': '2026-04-04T16:10:00Z',
+          'updated_at': '2026-04-04T16:10:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {33: commentsData},
+        postCommentIssueNumber: 33,
+        ghLog: ghLog,
+        postedBodyFile: postedBody,
+        failViewerLookup: true,
+      );
+
+      // And a responder that emits a planning reply.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'fallback reply',
+        'summary': 'posted',
+      });
+
+      // And a fake gh command that fails the authenticated user lookup.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      await app.close();
+
+      // Then it still posts one comment.
+      final logLines = await ghLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/33/comments'),
+            )
+            .length,
+        2,
+      );
+
+      // And the visible automation markers use the unknown identity fallback.
+      final postedComment = await postedBody.readAsString();
+      expect(postedComment, contains('@unknown'));
+    });
+
+    /// ```gherkin
     /// Scenario: Skip issue evaluation when no responders are configured
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And GitHub issue data with a comment that would otherwise be evaluated
@@ -749,7 +781,7 @@ projects:
         'cws-no-responders-',
       );
       final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await _initGitRepo(repoDir);
+      await initGitRepo(repoDir);
 
       // And GitHub issue data with a comment that would otherwise be evaluated.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -775,7 +807,7 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await _writeFakeGhScript(
+      await writeFakeGhScript(
         ghScript: ghScript,
         issueListResponse: issueData,
         commentResponses: {7: commentsData},
@@ -813,150 +845,4 @@ projects:
       expect(jobs.single.status, JobStatus.skipped);
     });
   });
-}
-
-Future<void> _writeFakeGhScript({
-  required File ghScript,
-  required List<Map<String, Object?>> issueListResponse,
-  required Map<int, List<Map<String, Object?>>> commentResponses,
-  File? ghLog,
-  int? postCommentIssueNumber,
-}) async {
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (ghLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${ghLog.path}"',
-    );
-  }
-
-  buffer
-    ..writeln(
-      r'''if [[ "$1" == "api" && "$4" == repos/owner/sample/issues\?* ]]; then''',
-    )
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode(issueListResponse))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  for (final entry in commentResponses.entries) {
-    buffer
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == '
-        '"repos/owner/sample/issues/${entry.key}/comments?per_page=100" ]]; then',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode(entry.value))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  if (postCommentIssueNumber != null) {
-    buffer
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == '
-        '"repos/owner/sample/issues/$postCommentIssueNumber/comments" ]]; then',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(
-        jsonEncode({
-          'id': 700,
-          'html_url': 'https://example.test/comment/700',
-          'body': 'posted',
-        }),
-      )
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  buffer
-    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await ghScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', ghScript.path]);
-}
-
-Future<void> _writeResponderScript(
-  File responderScript,
-  Map<String, Object?> response, {
-  String stderr = '',
-  int exitCode = 0,
-}) async {
-  await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-cat >/dev/null
-${stderr.isEmpty ? '' : "printf '%s\\n' ${jsonEncode(stderr)} >&2"}
-cat <<'JSON'
-${jsonEncode(response)}
-JSON
-exit $exitCode
-''');
-  await Process.run('chmod', ['+x', responderScript.path]);
-}
-
-Future<void> _writeJsonlResponderScript(
-  File responderScript,
-  Map<String, Object?> response,
-) async {
-  await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-cat >/dev/null
-cat <<'JSON'
-{"type":"thread.started","thread_id":"test-thread"}
-{"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":${jsonEncode(jsonEncode(response))}}}
-{"type":"turn.completed"}
-JSON
-''');
-  await Process.run('chmod', ['+x', responderScript.path]);
-}
-
-Future<void> _initGitRepo(Directory directory) async {
-  await _runGit(['init'], workingDirectory: directory.path);
-  await _runGit([
-    'config',
-    'user.email',
-    'test@example.com',
-  ], workingDirectory: directory.path);
-  await _runGit([
-    'config',
-    'user.name',
-    'Test User',
-  ], workingDirectory: directory.path);
-  await File(p.join(directory.path, 'README.md')).writeAsString('repo');
-  await _runGit(['add', '.'], workingDirectory: directory.path);
-  await _runGit(['commit', '-m', 'init'], workingDirectory: directory.path);
-}
-
-const Set<String> _gitContextEnvironmentKeys = {
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_COMMON_DIR',
-  'GIT_DIR',
-  'GIT_IMPLICIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_PREFIX',
-  'GIT_WORK_TREE',
-};
-
-Future<ProcessResult> _runGit(
-  List<String> arguments, {
-  required String workingDirectory,
-}) {
-  final environment = Map<String, String>.from(Platform.environment)
-    ..removeWhere((key, _) => _gitContextEnvironmentKeys.contains(key));
-  return Process.run(
-    'git',
-    arguments,
-    workingDirectory: workingDirectory,
-    environment: environment,
-    includeParentEnvironment: false,
-  );
 }

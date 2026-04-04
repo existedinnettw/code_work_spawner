@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+import 'comment_templates.dart';
+
 class AppConfig {
   AppConfig({
     required this.configPath,
@@ -257,6 +259,8 @@ class IssueAssistantConfig {
     required this.responders,
     required this.capabilities,
     required this.commentTag,
+    required this.commentPrefixTemplate,
+    required this.commentFooterTemplate,
   });
 
   final bool enabled;
@@ -266,6 +270,8 @@ class IssueAssistantConfig {
   final List<CliResponderConfig> responders;
   final Set<AssistantCapability> capabilities;
   final String commentTag;
+  final String commentPrefixTemplate;
+  final String commentFooterTemplate;
 
   factory IssueAssistantConfig.fromMap(Map<String, dynamic> map) {
     final respondersNode = map['responders'];
@@ -294,6 +300,12 @@ class IssueAssistantConfig {
       responders: responders,
       capabilities: capabilities,
       commentTag: map['commentTag']?.toString() ?? 'code-work-spawner',
+      commentPrefixTemplate:
+          map['commentPrefixTemplate']?.toString() ??
+          defaultCommentPrefixTemplate,
+      commentFooterTemplate:
+          map['commentFooterTemplate']?.toString() ??
+          defaultCommentFooterTemplate,
     );
   }
   static Duration _parseDuration(String input) {

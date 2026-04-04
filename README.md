@@ -25,51 +25,14 @@ It supports multi-repo configuration, responder fallback chains.
 
 ## Requirements
 
-- Dart SDK 3.11+
+- Dart SDK
 - `gh` CLI authenticated for the target repositories
 - Local checkouts for configured repositories
 - Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
 
 ## Config
 
-Create a local `agent-orchestrator.yaml`:
-
-```yaml
-defaults:
-  issueAssistant:
-    enabled: true
-    pollInterval: 5m
-    mentionTriggers: ["@helper", "@codex"]
-    commentTag: code-work-spawner
-    prompt: |
-      You are helping on {{repo}}.
-      Trigger: {{trigger}}
-      Thread:
-      {{thread_json}}
-    responders:
-      - id: codex
-        command: codex
-        args: ["exec", "--json"]
-        timeout: 10m
-      - id: opencode
-        command: opencode
-        timeout: 10m
-
-projects:
-  my-app:
-    repo: owner/my-app
-    path: ~/code/my-app
-    defaultBranch: main
-    sessionPrefix: app
-```
-
-Project entries can override `issueAssistant` fields when a repo needs a
-different prompt, mention triggers, or responder chain.
-
-For a more minimal Agent Orchestrator compatible subset, start from
-[`examples/simple-github.yaml`](examples/simple-github.yaml). This repo accepts
-AO-style `dataDir`, `worktreeDir`, and core `projects` fields, and uses
-`worktreeDir` for bug-verification worktrees.
+Create a local `agent-orchestrator.yaml` follow [`/examples/README.md`](examples/README.md) as a starting point.
 
 ## Run
 

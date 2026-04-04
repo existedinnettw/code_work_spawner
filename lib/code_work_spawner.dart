@@ -1,3 +1,4 @@
+export 'src/comment_templates.dart';
 export 'src/config.dart';
 export 'src/database.dart';
 export 'src/github_client.dart';

@@ -5,6 +5,7 @@ class GitHubClient {
   GitHubClient({this.ghCommand = 'gh'});
 
   final String ghCommand;
+  Future<String?>? _authenticatedLoginFuture;
 
   Future<List<GitHubIssueSummary>> fetchUpdatedIssues({
     required String repo,
@@ -72,6 +73,22 @@ class GitHubClient {
       url: map['html_url'] as String? ?? '',
       body: map['body'] as String? ?? body,
     );
+  }
+
+  Future<String?> getAuthenticatedLogin() {
+    return _authenticatedLoginFuture ??= _loadAuthenticatedLogin();
+  }
+
+  Future<String?> _loadAuthenticatedLogin() async {
+    final json = await _runJson(['api', 'user']);
+    if (json is! Map<String, dynamic>) {
+      return null;
+    }
+    final login = json['login']?.toString().trim();
+    if (login == null || login.isEmpty) {
+      return null;
+    }
+    return login;
   }
 
   Future<Object?> _runJson(List<String> arguments) async {
