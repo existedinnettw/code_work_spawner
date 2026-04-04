@@ -49,7 +49,7 @@ defaults:
     responders:
       - id: codex
         command: codex
-        args: ["exec", "--json-output"]
+        args: ["exec", "--json"]
         timeout: 10m
       - id: opencode
         command: opencode
@@ -66,7 +66,16 @@ projects:
 Project entries can override `issueAssistant` fields when a repo needs a
 different prompt, mention triggers, or responder chain.
 
+For a more minimal Agent Orchestrator compatible subset, start from
+[`examples/simple-github.yaml`](examples/simple-github.yaml). This repo accepts
+AO-style `dataDir`, `worktreeDir`, and core `projects` fields, and uses
+`worktreeDir` for bug-verification worktrees.
+
 ## Run
+
+```bash
+dart run build_runner build
+```
 
 Single poll cycle:
 

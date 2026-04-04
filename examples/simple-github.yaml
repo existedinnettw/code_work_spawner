@@ -1,0 +1,24 @@
+# Minimal setup for a single GitHub repo with GitHub Issues
+# AO-compatible subset supported by code_work_spawner.
+# Replies require at least one configured responder.
+
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@codex"]
+    responders:
+      # Replace this with a responder available on your machine.
+      - id: codex
+        command: codex
+        args: ["exec", "--json"]
+        timeout: 10m
+
+projects:
+  code-work-spawner:
+    repo: existedinnettw/code_work_spawner
+    path: ~/code_work_spawner
+    defaultBranch: main

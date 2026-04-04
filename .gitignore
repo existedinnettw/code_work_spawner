@@ -8,6 +8,7 @@ agent-orchestrator.yaml
 # !/.agents
 !/.git
 !/.github
+!/.vscode
 /skills/*
 !/skills/dart-gherkin-tests
-
+*.g.dart

@@ -7,11 +7,15 @@ import 'package:yaml/yaml.dart';
 class AppConfig {
   AppConfig({
     required this.configPath,
+    required this.dataDir,
+    required this.worktreeDir,
     required this.defaults,
     required this.projects,
   });
 
   final String configPath;
+  final String? dataDir;
+  final String? worktreeDir;
   final IssueAssistantConfig defaults;
   final Map<String, ProjectConfig> projects;
 
@@ -23,11 +27,80 @@ class AppConfig {
       throw const FormatException('Config root must be a YAML map.');
     }
 
-    final defaultsMap = _asMap(yaml['defaults']);
+    final root = _asMap(yaml);
+    final dialect = _detectDialect(root);
+    return switch (dialect) {
+      _ConfigDialect.current => _loadCurrentConfig(path, root),
+      _ConfigDialect.aoSubset => _loadAoSubsetConfig(path, root),
+    };
+  }
+
+  static AppConfig _loadCurrentConfig(String path, Map<String, dynamic> root) {
+    _validateKeys(
+      scope: 'config',
+      map: root,
+      allowed: {'defaults', 'projects', 'dataDir', 'worktreeDir'},
+    );
+    final defaultsMap = _asMap(root['defaults']);
     final defaultAssistantMap = _asMap(defaultsMap['issueAssistant']);
     final defaults = IssueAssistantConfig.fromMap(defaultAssistantMap);
+    final projects = _loadProjects(
+      root['projects'],
+      defaultAssistant: defaults,
+      defaultAssistantMap: defaultAssistantMap,
+    );
 
-    final projectsNode = yaml['projects'];
+    return AppConfig(
+      configPath: p.normalize(p.absolute(path)),
+      dataDir: _expandOptionalPath(root['dataDir']?.toString()),
+      worktreeDir: _expandOptionalPath(root['worktreeDir']?.toString()),
+      defaults: defaults,
+      projects: projects,
+    );
+  }
+
+  static AppConfig _loadAoSubsetConfig(String path, Map<String, dynamic> root) {
+    _validateKeys(
+      scope: 'config',
+      map: root,
+      allowed: {'defaults', 'projects', 'dataDir', 'worktreeDir'},
+    );
+
+    final defaultsMap = _asMap(root['defaults']);
+    _validateKeys(
+      scope: 'defaults',
+      map: defaultsMap,
+      allowed: {
+        'defaultBranch',
+        'default_branch',
+        'sessionPrefix',
+        'session_prefix',
+      },
+    );
+
+    final defaultAssistantMap = <String, dynamic>{};
+    final defaults = IssueAssistantConfig.fromMap(defaultAssistantMap);
+    final projects = _loadAoSubsetProjects(
+      root['projects'],
+      defaultsMap: defaultsMap,
+      defaultAssistant: defaults,
+      defaultAssistantMap: defaultAssistantMap,
+    );
+
+    return AppConfig(
+      configPath: p.normalize(p.absolute(path)),
+      dataDir: _expandOptionalPath(root['dataDir']?.toString()),
+      worktreeDir: _expandOptionalPath(root['worktreeDir']?.toString()),
+      defaults: defaults,
+      projects: projects,
+    );
+  }
+
+  static Map<String, ProjectConfig> _loadProjects(
+    Object? projectsNode, {
+    required IssueAssistantConfig defaultAssistant,
+    required Map<String, dynamic> defaultAssistantMap,
+  }) {
     if (projectsNode is! YamlMap || projectsNode.isEmpty) {
       throw const FormatException('projects must be a non-empty map.');
     }
@@ -39,16 +112,56 @@ class AppConfig {
       projects[key] = ProjectConfig.fromMap(
         key: key,
         map: value,
-        defaultAssistant: defaults,
+        defaultAssistant: defaultAssistant,
         defaultAssistantMap: defaultAssistantMap,
       );
     }
+    return projects;
+  }
 
-    return AppConfig(
-      configPath: p.normalize(p.absolute(path)),
-      defaults: defaults,
-      projects: projects,
-    );
+  static Map<String, ProjectConfig> _loadAoSubsetProjects(
+    Object? projectsNode, {
+    required Map<String, dynamic> defaultsMap,
+    required IssueAssistantConfig defaultAssistant,
+    required Map<String, dynamic> defaultAssistantMap,
+  }) {
+    if (projectsNode is! YamlMap || projectsNode.isEmpty) {
+      throw const FormatException('projects must be a non-empty map.');
+    }
+
+    final projects = <String, ProjectConfig>{};
+    for (final entry in projectsNode.entries) {
+      final key = entry.key.toString();
+      final value = _asMap(entry.value);
+      _validateKeys(
+        scope: 'projects.$key',
+        map: value,
+        allowed: {
+          'repo',
+          'path',
+          'defaultBranch',
+          'default_branch',
+          'sessionPrefix',
+          'session_prefix',
+        },
+      );
+      final merged = <String, dynamic>{...defaultsMap, ...value};
+      projects[key] = ProjectConfig.fromMap(
+        key: key,
+        map: merged,
+        defaultAssistant: defaultAssistant,
+        defaultAssistantMap: defaultAssistantMap,
+      );
+    }
+    return projects;
+  }
+
+  static _ConfigDialect _detectDialect(Map<String, dynamic> root) {
+    final defaultsMap = _asMap(root['defaults']);
+    if (defaultsMap.containsKey('issueAssistant')) {
+      return _ConfigDialect.current;
+    }
+    return _ConfigDialect.aoSubset;
   }
 
   static Map<String, dynamic> _asMap(Object? value) {
@@ -67,6 +180,18 @@ class AppConfig {
     }
 
     throw FormatException('Expected map, got ${value.runtimeType}.');
+  }
+
+  static void _validateKeys({
+    required String scope,
+    required Map<String, dynamic> map,
+    required Set<String> allowed,
+  }) {
+    for (final key in map.keys) {
+      if (!allowed.contains(key)) {
+        throw FormatException('Unsupported config field: $scope.$key');
+      }
+    }
   }
 }
 
@@ -237,11 +362,10 @@ class CliResponderConfig {
       throw FormatException('Responder "$id" must define command.');
     }
 
-    final args =
-        (map['args'] as List?)
-            ?.map((item) => item.toString())
-            .toList(growable: false) ??
-        const <String>[];
+    final args = _normalizeArgs(
+      (map['args'] as List?)?.map((item) => item.toString()) ??
+          const <String>[],
+    );
     final env = AppConfig._asMap(
       map['env'],
     ).map((key, value) => MapEntry(key, value.toString()));
@@ -256,6 +380,12 @@ class CliResponderConfig {
         map['timeout']?.toString() ?? '10m',
       ),
     );
+  }
+
+  static List<String> _normalizeArgs(Iterable<String> args) {
+    return args
+        .map((arg) => arg == '--json-output' ? '--json' : arg)
+        .toList(growable: false);
   }
 }
 
@@ -298,6 +428,13 @@ String _expandHome(String path) {
   return p.normalize(p.join(home, path.substring(2)));
 }
 
+String? _expandOptionalPath(String? path) {
+  if (path == null || path.isEmpty) {
+    return null;
+  }
+  return _expandHome(path);
+}
+
 String _deriveSessionPrefix(String key) {
   if (key.contains('-')) {
     return key
@@ -319,3 +456,5 @@ String _deriveSessionPrefix(String key) {
 
   return key.substring(0, key.length < 3 ? key.length : 3).toLowerCase();
 }
+
+enum _ConfigDialect { current, aoSubset }

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:logging/logging.dart';
 
 import 'cli_responder.dart';
 import 'config.dart';
@@ -10,6 +12,8 @@ import 'github_client.dart';
 import 'workspace_manager.dart';
 
 class IssueAssistantApp {
+  static final Logger _logger = Logger('code_work_spawner.app');
+
   IssueAssistantApp._({
     required this.config,
     required this.database,
@@ -35,7 +39,7 @@ class IssueAssistantApp {
       database: database,
       githubClient: GitHubClient(ghCommand: ghCommand),
       responderRunner: CliResponderRunner(),
-      workspaceManager: WorkspaceManager(),
+      workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
     );
   }
 
@@ -47,12 +51,15 @@ class IssueAssistantApp {
   }
 
   Future<void> runOnce() async {
+    _log('starting poll cycle projects=${config.projects.length}');
     for (final project in config.projects.values) {
       if (!project.issueAssistant.enabled) {
+        _log('skip project=${project.key} reason=issue_assistant_disabled');
         continue;
       }
       await _pollProject(project);
     }
+    _log('poll cycle completed');
   }
 
   Future<void> close() => database.close();
@@ -70,14 +77,22 @@ class IssueAssistantApp {
   Future<void> _pollProject(ProjectConfig project) async {
     final pollRunId = await database.startPollRun(project.key);
     try {
+      final repoDirectory = Directory(project.path);
+      final repoExists = await repoDirectory.exists();
       final projectState = await database.findProjectState(project.key);
       final since = projectState?.lastSeenUpdatedAt == null
           ? null
           : DateTime.parse(projectState!.lastSeenUpdatedAt!);
+      _log(
+        'poll project=${project.key} repo=${project.repo} '
+        'path=${project.path} path_exists=$repoExists '
+        'since=${since?.toUtc().toIso8601String() ?? "initial"}',
+      );
       final issues = await githubClient.fetchUpdatedIssues(
         repo: project.repo,
         since: since,
       );
+      _log('project=${project.key} fetched_issues=${issues.length}');
 
       DateTime? latestSeen = since;
       for (final issue in issues) {
@@ -93,12 +108,17 @@ class IssueAssistantApp {
         lastSeenUpdatedAt: latestSeen,
       );
       await database.finishPollRun(pollRunId: pollRunId, success: true);
+      _log(
+        'poll project=${project.key} completed latest_seen='
+        '${latestSeen?.toUtc().toIso8601String() ?? "unchanged"}',
+      );
     } catch (error) {
       await database.finishPollRun(
         pollRunId: pollRunId,
         success: false,
         error: error.toString(),
       );
+      _log('poll project=${project.key} failed error=$error');
       rethrow;
     }
   }
@@ -114,16 +134,23 @@ class IssueAssistantApp {
     final fingerprint = _fingerprintThread(thread);
     final record = await database.findIssueThread(project.key, issue.number);
     if (record?.lastEvaluatedFingerprint == fingerprint) {
+      _log(
+        'skip issue=${project.key}#${issue.number} reason=fingerprint_unchanged',
+      );
       return;
     }
 
     final trigger = _determineTrigger(project, thread);
+    _log(
+      'evaluate issue=${project.key}#${issue.number} '
+      'comments=${thread.comments.length} trigger=$trigger',
+    );
     final jobId = await database.createJob(
       projectKey: project.key,
       issueNumber: issue.number,
       fingerprint: fingerprint,
       trigger: trigger,
-      status: 'queued',
+      status: JobStatus.queued,
     );
 
     await database.upsertIssueThread(
@@ -137,13 +164,32 @@ class IssueAssistantApp {
       lastCommentUrl: record?.lastCommentUrl,
     );
 
-    await database.updateJobStatus(jobId, 'running');
+    await database.updateJobStatus(jobId, JobStatus.running);
     final forceReply = trigger == 'mention';
     final prompt = _buildPrompt(
       project: project,
       thread: thread,
       trigger: trigger,
     );
+
+    if (project.issueAssistant.responders.isEmpty) {
+      _logError(
+        'issue=${project.key}#${issue.number} '
+        'skipped no_responders_configured',
+      );
+      await database.upsertIssueThread(
+        projectKey: project.key,
+        issueNumber: issue.number,
+        fingerprint: fingerprint,
+        updatedAt: issue.updatedAt,
+        lastEvaluatedFingerprint: fingerprint,
+        lastDecision: record?.lastDecision,
+        lastCommentId: record?.lastCommentId,
+        lastCommentUrl: record?.lastCommentUrl,
+      );
+      await database.updateJobStatus(jobId, JobStatus.skipped);
+      return;
+    }
 
     ResponderResult? selectedResult;
     String? workspacePath;
@@ -154,6 +200,11 @@ class IssueAssistantApp {
       workspacePath = needsWorktree
           ? await workspaceManager.createEphemeralWorktree(project.path)
           : project.path;
+      _log(
+        'run responder=${responder.id} issue=${project.key}#${issue.number} '
+        'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
+        'workspace=$workspacePath',
+      );
 
       try {
         final result = await responderRunner.run(
@@ -174,10 +225,19 @@ class IssueAssistantApp {
           stdout: result.rawStdout,
           stderr: result.rawStderr,
         );
+        _log(
+          'responder=${responder.id}b issue=${project.key}#${issue.number}, '
+          'title="${thread.issue.title}", '
+          'decision=${result.decision}, mode=${result.mode}',
+        );
         selectedResult = result;
         break;
       } catch (error) {
         lastError = error;
+        _log(
+          'responder=${responder.id} issue=${project.key}#${issue.number} '
+          'failed error=$error',
+        );
         await database.addExecutionRun(
           jobId: jobId,
           responderId: responder.id,
@@ -196,7 +256,10 @@ class IssueAssistantApp {
     }
 
     if (selectedResult == null) {
-      await database.updateJobStatus(jobId, 'failed');
+      await database.updateJobStatus(jobId, JobStatus.failed);
+      _log(
+        'issue=${project.key}#${issue.number} failed no_responder_succeeded',
+      );
       throw StateError(
         'All responders failed for ${project.key}#${issue.number}: $lastError',
       );
@@ -213,7 +276,8 @@ class IssueAssistantApp {
         lastCommentId: record?.lastCommentId,
         lastCommentUrl: record?.lastCommentUrl,
       );
-      await database.updateJobStatus(jobId, 'completed');
+      await database.updateJobStatus(jobId, JobStatus.completed);
+      _log('issue=${project.key}#${issue.number} completed decision=no_reply');
       return;
     }
 
@@ -246,7 +310,8 @@ class IssueAssistantApp {
       lastCommentId: posted.id,
       lastCommentUrl: posted.url,
     );
-    await database.updateJobStatus(jobId, 'completed');
+    await database.updateJobStatus(jobId, JobStatus.completed);
+    _log('issue=${project.key}#${issue.number} posted_comment_id=${posted.id}');
   }
 
   String _buildPrompt({
@@ -319,5 +384,13 @@ class IssueAssistantApp {
     required String markdown,
   }) {
     return '$markdown\n\n<!-- $tag:$fingerprint -->';
+  }
+
+  void _log(String message) {
+    _logger.info(message);
+  }
+
+  void _logError(String message) {
+    _logger.severe(message);
   }
 }

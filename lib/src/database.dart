@@ -6,6 +6,8 @@ import 'package:path/path.dart' as p;
 
 part 'database.g.dart';
 
+enum JobStatus { queued, running, completed, failed, skipped }
+
 class ProjectStates extends Table {
   TextColumn get projectKey => text()();
   TextColumn get repo => text()();
@@ -39,7 +41,7 @@ class Jobs extends Table {
   IntColumn get issueNumber => integer()();
   TextColumn get fingerprint => text()();
   TextColumn get trigger => text()();
-  TextColumn get status => text()();
+  TextColumn get status => textEnum<JobStatus>()();
   TextColumn get createdAt => text()();
   TextColumn get updatedAt => text()();
 }
@@ -179,7 +181,7 @@ class AppDatabase extends _$AppDatabase {
     required int issueNumber,
     required String fingerprint,
     required String trigger,
-    required String status,
+    required JobStatus status,
   }) {
     final now = DateTime.now().toUtc().toIso8601String();
     return into(jobs).insert(
@@ -195,7 +197,7 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  Future<void> updateJobStatus(int jobId, String status) {
+  Future<void> updateJobStatus(int jobId, JobStatus status) {
     return (update(jobs)..where((tbl) => tbl.id.equals(jobId))).write(
       JobsCompanion(
         status: Value(status),

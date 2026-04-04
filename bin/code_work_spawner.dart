@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:code_work_spawner/code_work_spawner.dart';
+import 'package:logging/logging.dart';
 
 Future<void> main(List<String> arguments) async {
+  _configureLogging();
+
   final parser = ArgParser()
     ..addFlag(
       'once',
@@ -36,6 +39,22 @@ Future<void> main(List<String> arguments) async {
   }
 
   final config = await AppConfig.load(results['config'] as String);
+  final logger = Logger('code_work_spawner.cli');
+  logger.info(
+    'loaded config=${config.configPath} '
+    'projects=${config.projects.length} '
+    'worktreeDir=${config.worktreeDir ?? "(system temp)"}',
+  );
+  for (final project in config.projects.values) {
+    final repoDirectory = Directory(project.path);
+    logger.info(
+      'project=${project.key} '
+      'repo=${project.repo} '
+      'path=${project.path} '
+      'exists=${await repoDirectory.exists()} '
+      'enabled=${project.issueAssistant.enabled}',
+    );
+  }
   final app = await IssueAssistantApp.open(
     config: config,
     databasePath: results['db'] as String,
@@ -52,4 +71,14 @@ Future<void> main(List<String> arguments) async {
   } finally {
     await app.close();
   }
+}
+
+void _configureLogging() {
+  hierarchicalLoggingEnabled = true;
+  Logger.root.level = Level.INFO;
+  Logger.root.onRecord.listen((record) {
+    stdout.writeln(
+      '[${record.loggerName}] ${record.level.name}: ${record.message}',
+    );
+  });
 }

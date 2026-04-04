@@ -87,6 +87,11 @@ class CliResponderRunner {
     try {
       return (jsonDecode(trimmed) as Map).cast<String, dynamic>();
     } on FormatException {
+      final eventJson = _decodeJsonlEvents(trimmed);
+      if (eventJson != null) {
+        return eventJson;
+      }
+
       final first = trimmed.indexOf('{');
       final last = trimmed.lastIndexOf('}');
       if (first == -1 || last <= first) {
@@ -95,6 +100,45 @@ class CliResponderRunner {
       final snippet = trimmed.substring(first, last + 1);
       return (jsonDecode(snippet) as Map).cast<String, dynamic>();
     }
+  }
+
+  Map<String, dynamic>? _decodeJsonlEvents(String stdout) {
+    Map<String, dynamic>? lastEvent;
+    for (final line in const LineSplitter().convert(stdout)) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || !trimmed.startsWith('{')) {
+        continue;
+      }
+
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map) {
+          continue;
+        }
+        lastEvent = decoded.cast<String, dynamic>();
+
+        final item = lastEvent['item'];
+        if (item is Map &&
+            item['type']?.toString() == 'agent_message' &&
+            item['text'] is String) {
+          final text = (item['text'] as String).trim();
+          if (text.startsWith('{')) {
+            return (jsonDecode(text) as Map).cast<String, dynamic>();
+          }
+        }
+      } on FormatException {
+        continue;
+      }
+    }
+
+    if (lastEvent case {'text': final String text}) {
+      final trimmed = text.trim();
+      if (trimmed.startsWith('{')) {
+        return (jsonDecode(trimmed) as Map).cast<String, dynamic>();
+      }
+    }
+
+    return null;
   }
 }
 

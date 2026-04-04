@@ -1004,15 +1004,15 @@ class $JobsTable extends Jobs with TableInfo<$JobsTable, Job> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _statusMeta = const VerificationMeta('status');
   @override
-  late final GeneratedColumn<String> status = GeneratedColumn<String>(
-    'status',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
+  late final GeneratedColumnWithTypeConverter<JobStatus, String> status =
+      GeneratedColumn<String>(
+        'status',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<JobStatus>($JobsTable.$converterstatus);
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1099,14 +1099,6 @@ class $JobsTable extends Jobs with TableInfo<$JobsTable, Job> {
     } else if (isInserting) {
       context.missing(_triggerMeta);
     }
-    if (data.containsKey('status')) {
-      context.handle(
-        _statusMeta,
-        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_statusMeta);
-    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1152,10 +1144,12 @@ class $JobsTable extends Jobs with TableInfo<$JobsTable, Job> {
         DriftSqlType.string,
         data['${effectivePrefix}trigger'],
       )!,
-      status: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}status'],
-      )!,
+      status: $JobsTable.$converterstatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}status'],
+        )!,
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}created_at'],
@@ -1171,6 +1165,9 @@ class $JobsTable extends Jobs with TableInfo<$JobsTable, Job> {
   $JobsTable createAlias(String alias) {
     return $JobsTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<JobStatus, String, String> $converterstatus =
+      const EnumNameConverter<JobStatus>(JobStatus.values);
 }
 
 class Job extends DataClass implements Insertable<Job> {
@@ -1179,7 +1176,7 @@ class Job extends DataClass implements Insertable<Job> {
   final int issueNumber;
   final String fingerprint;
   final String trigger;
-  final String status;
+  final JobStatus status;
   final String createdAt;
   final String updatedAt;
   const Job({
@@ -1200,7 +1197,11 @@ class Job extends DataClass implements Insertable<Job> {
     map['issue_number'] = Variable<int>(issueNumber);
     map['fingerprint'] = Variable<String>(fingerprint);
     map['trigger'] = Variable<String>(trigger);
-    map['status'] = Variable<String>(status);
+    {
+      map['status'] = Variable<String>(
+        $JobsTable.$converterstatus.toSql(status),
+      );
+    }
     map['created_at'] = Variable<String>(createdAt);
     map['updated_at'] = Variable<String>(updatedAt);
     return map;
@@ -1230,7 +1231,9 @@ class Job extends DataClass implements Insertable<Job> {
       issueNumber: serializer.fromJson<int>(json['issueNumber']),
       fingerprint: serializer.fromJson<String>(json['fingerprint']),
       trigger: serializer.fromJson<String>(json['trigger']),
-      status: serializer.fromJson<String>(json['status']),
+      status: $JobsTable.$converterstatus.fromJson(
+        serializer.fromJson<String>(json['status']),
+      ),
       createdAt: serializer.fromJson<String>(json['createdAt']),
       updatedAt: serializer.fromJson<String>(json['updatedAt']),
     );
@@ -1244,7 +1247,9 @@ class Job extends DataClass implements Insertable<Job> {
       'issueNumber': serializer.toJson<int>(issueNumber),
       'fingerprint': serializer.toJson<String>(fingerprint),
       'trigger': serializer.toJson<String>(trigger),
-      'status': serializer.toJson<String>(status),
+      'status': serializer.toJson<String>(
+        $JobsTable.$converterstatus.toJson(status),
+      ),
       'createdAt': serializer.toJson<String>(createdAt),
       'updatedAt': serializer.toJson<String>(updatedAt),
     };
@@ -1256,7 +1261,7 @@ class Job extends DataClass implements Insertable<Job> {
     int? issueNumber,
     String? fingerprint,
     String? trigger,
-    String? status,
+    JobStatus? status,
     String? createdAt,
     String? updatedAt,
   }) => Job(
@@ -1334,7 +1339,7 @@ class JobsCompanion extends UpdateCompanion<Job> {
   final Value<int> issueNumber;
   final Value<String> fingerprint;
   final Value<String> trigger;
-  final Value<String> status;
+  final Value<JobStatus> status;
   final Value<String> createdAt;
   final Value<String> updatedAt;
   const JobsCompanion({
@@ -1353,7 +1358,7 @@ class JobsCompanion extends UpdateCompanion<Job> {
     required int issueNumber,
     required String fingerprint,
     required String trigger,
-    required String status,
+    required JobStatus status,
     required String createdAt,
     required String updatedAt,
   }) : projectKey = Value(projectKey),
@@ -1391,7 +1396,7 @@ class JobsCompanion extends UpdateCompanion<Job> {
     Value<int>? issueNumber,
     Value<String>? fingerprint,
     Value<String>? trigger,
-    Value<String>? status,
+    Value<JobStatus>? status,
     Value<String>? createdAt,
     Value<String>? updatedAt,
   }) {
@@ -1426,7 +1431,9 @@ class JobsCompanion extends UpdateCompanion<Job> {
       map['trigger'] = Variable<String>(trigger.value);
     }
     if (status.present) {
-      map['status'] = Variable<String>(status.value);
+      map['status'] = Variable<String>(
+        $JobsTable.$converterstatus.toSql(status.value),
+      );
     }
     if (createdAt.present) {
       map['created_at'] = Variable<String>(createdAt.value);
@@ -3500,7 +3507,7 @@ typedef $$JobsTableCreateCompanionBuilder =
       required int issueNumber,
       required String fingerprint,
       required String trigger,
-      required String status,
+      required JobStatus status,
       required String createdAt,
       required String updatedAt,
     });
@@ -3511,7 +3518,7 @@ typedef $$JobsTableUpdateCompanionBuilder =
       Value<int> issueNumber,
       Value<String> fingerprint,
       Value<String> trigger,
-      Value<String> status,
+      Value<JobStatus> status,
       Value<String> createdAt,
       Value<String> updatedAt,
     });
@@ -3549,10 +3556,11 @@ class $$JobsTableFilterComposer extends Composer<_$AppDatabase, $JobsTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get status => $composableBuilder(
-    column: $table.status,
-    builder: (column) => ColumnFilters(column),
-  );
+  ColumnWithTypeConverterFilters<JobStatus, JobStatus, String> get status =>
+      $composableBuilder(
+        column: $table.status,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
 
   ColumnFilters<String> get createdAt => $composableBuilder(
     column: $table.createdAt,
@@ -3644,7 +3652,7 @@ class $$JobsTableAnnotationComposer
   GeneratedColumn<String> get trigger =>
       $composableBuilder(column: $table.trigger, builder: (column) => column);
 
-  GeneratedColumn<String> get status =>
+  GeneratedColumnWithTypeConverter<JobStatus, String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
   GeneratedColumn<String> get createdAt =>
@@ -3687,7 +3695,7 @@ class $$JobsTableTableManager
                 Value<int> issueNumber = const Value.absent(),
                 Value<String> fingerprint = const Value.absent(),
                 Value<String> trigger = const Value.absent(),
-                Value<String> status = const Value.absent(),
+                Value<JobStatus> status = const Value.absent(),
                 Value<String> createdAt = const Value.absent(),
                 Value<String> updatedAt = const Value.absent(),
               }) => JobsCompanion(
@@ -3707,7 +3715,7 @@ class $$JobsTableTableManager
                 required int issueNumber,
                 required String fingerprint,
                 required String trigger,
-                required String status,
+                required JobStatus status,
                 required String createdAt,
                 required String updatedAt,
               }) => JobsCompanion.insert(
