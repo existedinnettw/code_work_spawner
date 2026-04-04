@@ -1,6 +1,6 @@
 # code_work_spawner
 
-GitHub issue thread assistant with Agent Orchestrator style config.
+GitHub issue thread assistant with an Agent Orchestrator style YAML config.
 
 The app polls configured GitHub repositories with `gh`, reads issue threads and
 issue comments, and uses configured CLI responders such as `codex`,
@@ -32,7 +32,17 @@ It supports multi-repo configuration, responder fallback chains.
 
 ## Config
 
-Create a local `agent-orchestrator.yaml` follow [`/examples/README.md`](examples/README.md) as a starting point.
+Create a local `agent-orchestrator.yaml` and follow [`/examples/README.md`](examples/README.md) as a starting point.
+
+Generate a starter config:
+
+```bash
+dart run bin/code_work_spawner.dart init-config
+# Write it to a file:
+dart run bin/code_work_spawner.dart init-config --output agent-orchestrator.yaml
+# Overwrite an existing file:
+dart run bin/code_work_spawner.dart init-config --output agent-orchestrator.yaml --force
+```
 
 ## Run
 

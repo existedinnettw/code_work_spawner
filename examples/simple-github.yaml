@@ -1,5 +1,4 @@
-# Minimal setup for a single GitHub repo with GitHub Issues
-# AO-compatible subset supported by code_work_spawner.
+# Minimal setup for a single GitHub repo with GitHub Issues.
 # Replies require at least one configured responder.
 
 dataDir: ~/.agent-orchestrator

@@ -31,8 +31,31 @@ Future<void> main(List<String> arguments) async {
       defaultsTo: 'gh',
     )
     ..addFlag('help', abbr: 'h', negatable: false);
+  final initConfigParser = parser.addCommand('init-config')
+    ..addOption(
+      'output',
+      abbr: 'o',
+      help: 'Write the starter config to a file.',
+    )
+    ..addFlag(
+      'force',
+      abbr: 'f',
+      help: 'Overwrite the output file if it already exists.',
+      negatable: false,
+    )
+    ..addFlag('help', abbr: 'h', negatable: false);
 
   final results = parser.parse(arguments);
+  final command = results.command;
+  if (command?.name == 'init-config') {
+    if (command!['help'] as bool) {
+      stdout.writeln(initConfigParser.usage);
+      return;
+    }
+    await _runInitConfig(command);
+    return;
+  }
+
   if (results['help'] as bool) {
     stdout.writeln(parser.usage);
     return;
@@ -71,6 +94,30 @@ Future<void> main(List<String> arguments) async {
   } finally {
     await app.close();
   }
+}
+
+Future<void> _runInitConfig(ArgResults command) async {
+  final outputPath = command['output'] as String?;
+  final force = command['force'] as bool;
+  final content = AppConfig.renderInitialConfig();
+
+  if (outputPath == null) {
+    stdout.writeln(content);
+    return;
+  }
+
+  final outputFile = File(outputPath);
+  if (await outputFile.exists() && !force) {
+    stderr.writeln(
+      'Refusing to overwrite existing file: $outputPath. Use --force to replace it.',
+    );
+    exitCode = 2;
+    return;
+  }
+
+  await outputFile.parent.create(recursive: true);
+  await outputFile.writeAsString('$content\n');
+  stdout.writeln('Wrote starter config to ${outputFile.path}');
 }
 
 void _configureLogging() {
