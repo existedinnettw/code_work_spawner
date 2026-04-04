@@ -142,6 +142,25 @@ JSON
   await Process.run('chmod', ['+x', responderScript.path]);
 }
 
+Future<void> writeDelayedLoggingResponderScript(
+  File responderScript, {
+  required File eventLog,
+  required Duration delay,
+  required Map<String, Object?> response,
+}) async {
+  await responderScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+printf 'start:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(date +%s)" >> "${eventLog.path}"
+cat >/dev/null
+sleep ${delay.inSeconds}
+printf 'end:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(date +%s)" >> "${eventLog.path}"
+cat <<'JSON'
+${jsonEncode(response)}
+JSON
+''');
+  await Process.run('chmod', ['+x', responderScript.path]);
+}
+
 Future<void> initGitRepo(Directory directory) async {
   await runGit(['init'], workingDirectory: directory.path);
   await runGit([

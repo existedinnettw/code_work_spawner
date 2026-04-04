@@ -99,6 +99,11 @@ projects:
         config.projects['sample']!.issueAssistant.commentFooterTemplate,
         defaultCommentFooterTemplate,
       );
+      expect(
+        config.projects['sample']!.issueAssistant.pollInterval,
+        const Duration(seconds: 30),
+      );
+      expect(config.projects['sample']!.issueAssistant.maxConcurrentIssues, 3);
     });
 
     /// ```gherkin

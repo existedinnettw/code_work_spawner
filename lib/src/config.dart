@@ -254,6 +254,7 @@ class IssueAssistantConfig {
   IssueAssistantConfig({
     required this.enabled,
     required this.pollInterval,
+    required this.maxConcurrentIssues,
     required this.mentionTriggers,
     required this.prompt,
     required this.responders,
@@ -265,6 +266,7 @@ class IssueAssistantConfig {
 
   final bool enabled;
   final Duration pollInterval;
+  final int maxConcurrentIssues;
   final List<String> mentionTriggers;
   final String prompt;
   final List<CliResponderConfig> responders;
@@ -287,10 +289,16 @@ class IssueAssistantConfig {
               .map((item) => AssistantCapability.parse(item.toString()))
               .toSet()
         : {AssistantCapability.planning, AssistantCapability.bugVerification};
+    final maxConcurrentIssues = _parsePositiveInt(
+      map['maxConcurrentIssues'],
+      fieldName: 'maxConcurrentIssues',
+      defaultValue: 3,
+    );
 
     return IssueAssistantConfig(
       enabled: map['enabled'] as bool? ?? true,
-      pollInterval: _parseDuration(map['pollInterval']?.toString() ?? '5m'),
+      pollInterval: _parseDuration(map['pollInterval']?.toString() ?? '30s'),
+      maxConcurrentIssues: maxConcurrentIssues,
       mentionTriggers:
           (map['mentionTriggers'] as List?)
               ?.map((item) => item.toString())
@@ -322,6 +330,23 @@ class IssueAssistantConfig {
       'd' => Duration(days: value),
       _ => throw FormatException('Invalid duration unit: $input'),
     };
+  }
+
+  static int _parsePositiveInt(
+    Object? value, {
+    required String fieldName,
+    required int defaultValue,
+  }) {
+    if (value == null) {
+      return defaultValue;
+    }
+    final parsed = int.tryParse(value.toString());
+    if (parsed == null || parsed < 1) {
+      throw FormatException(
+        '$fieldName must be an integer greater than or equal to 1.',
+      );
+    }
+    return parsed;
   }
 
   static const String _defaultPrompt = '''

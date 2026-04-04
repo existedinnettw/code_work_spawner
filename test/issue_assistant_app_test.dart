@@ -322,9 +322,9 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Run mention replies from an ephemeral worktree with issue context
+    /// Scenario: Run bug verification mention replies from an ephemeral worktree with issue context
     ///   Given a temporary project checkout that can be used as the local repo path
-    ///   And GitHub issue data containing an explicit assistant mention
+    ///   And GitHub issue data containing a bug verification mention
     ///   And a responder that records its working directory and stdin before returning no_reply
     ///   And an orchestrator-style config pointing to the fake repo and responder
     ///   When the app processes one polling cycle
@@ -332,54 +332,56 @@ projects:
     ///   And the responder stdin includes the latest issue comment text
     ///   And the app still posts a GitHub comment because the thread explicitly mentioned the assistant
     /// ```
-    test('Run mention replies from an ephemeral worktree with issue context', () async {
-      // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-mention-worktree-',
-      );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+    test(
+      'Run bug verification mention replies from an ephemeral worktree with issue context',
+      () async {
+        // Given a temporary project checkout that can be used as the local repo path.
+        final sandbox = await Directory.systemTemp.createTemp(
+          'cws-mention-worktree-',
+        );
+        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+        await initGitRepo(repoDir);
 
-      // And GitHub issue data containing an explicit assistant mention.
-      final ghScript = File(p.join(sandbox.path, 'gh'));
-      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
-      final issueData = [
-        {
-          'number': 24,
-          'title': 'Need your thoughts',
-          'body': 'Please review the CLI workflow.',
-          'state': 'open',
-          'html_url': 'https://example.test/issues/24',
-          'updated_at': '2026-04-04T15:30:00Z',
-          'user': {'login': 'reporter'},
-          'labels': const [],
-        },
-      ];
-      final commentsData = [
-        {
-          'id': 240,
-          'body': '@helper give me your though about this CLI flow',
-          'html_url': 'https://example.test/issues/24#issuecomment-240',
-          'created_at': '2026-04-04T15:30:00Z',
-          'updated_at': '2026-04-04T15:30:00Z',
-          'user': {'login': 'reporter'},
-        },
-      ];
-      await writeFakeGhScript(
-        ghScript: ghScript,
-        issueListResponse: issueData,
-        commentResponses: {24: commentsData},
-        ghLog: ghLog,
-        postCommentIssueNumber: 24,
-      );
+        // And GitHub issue data containing a bug verification mention.
+        final ghScript = File(p.join(sandbox.path, 'gh'));
+        final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+        final issueData = [
+          {
+            'number': 24,
+            'title': 'Need help verifying a bug',
+            'body': 'Please verify and reproduce this bug in the CLI workflow.',
+            'state': 'open',
+            'html_url': 'https://example.test/issues/24',
+            'updated_at': '2026-04-04T15:30:00Z',
+            'user': {'login': 'reporter'},
+            'labels': const [],
+          },
+        ];
+        final commentsData = [
+          {
+            'id': 240,
+            'body': '@helper please verify and reproduce this bug',
+            'html_url': 'https://example.test/issues/24#issuecomment-240',
+            'created_at': '2026-04-04T15:30:00Z',
+            'updated_at': '2026-04-04T15:30:00Z',
+            'user': {'login': 'reporter'},
+          },
+        ];
+        await writeFakeGhScript(
+          ghScript: ghScript,
+          issueListResponse: issueData,
+          commentResponses: {24: commentsData},
+          ghLog: ghLog,
+          postCommentIssueNumber: 24,
+        );
 
-      // And a responder that records its working directory and stdin before returning no_reply.
-      final cwdCapture = File(p.join(sandbox.path, 'responder.cwd'));
-      final stdinCapture = File(p.join(sandbox.path, 'responder.stdin'));
-      final responderScript = File(
-        p.join(sandbox.path, 'responder-capture.sh'),
-      );
-      await responderScript.writeAsString('''#!/usr/bin/env bash
+        // And a responder that records its working directory and stdin before returning no_reply.
+        final cwdCapture = File(p.join(sandbox.path, 'responder.cwd'));
+        final stdinCapture = File(p.join(sandbox.path, 'responder.stdin'));
+        final responderScript = File(
+          p.join(sandbox.path, 'responder-capture.sh'),
+        );
+        await responderScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
 pwd > "${cwdCapture.path}"
 cat > "${stdinCapture.path}"
@@ -387,11 +389,135 @@ cat <<'JSON'
 {"decision":"no_reply","mode":"planning","summary":"captured mention context"}
 JSON
 ''');
+        await Process.run('chmod', ['+x', responderScript.path]);
+
+        // And an orchestrator-style config pointing to the fake repo and responder.
+        final configFile = File(
+          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          ghCommand: ghScript.path,
+        );
+
+        // When the app processes one polling cycle.
+        await app.runOnce();
+        await app.close();
+
+        // Then the responder runs from an ephemeral worktree instead of the source checkout.
+        final capturedCwd = await cwdCapture.readAsString();
+        expect(
+          p.normalize(capturedCwd.trim()),
+          isNot(p.normalize(repoDir.path)),
+        );
+
+        // And the responder stdin includes the latest issue comment text.
+        final capturedStdin = await stdinCapture.readAsString();
+        expect(
+          capturedStdin,
+          contains('@helper please verify and reproduce this bug'),
+        );
+
+        // And the app still posts a GitHub comment because the thread explicitly mentioned the assistant.
+        final logLines = await ghLog.readAsLines();
+        expect(
+          logLines
+              .where(
+                (line) =>
+                    line.contains('repos/owner/sample/issues/24/comments'),
+              )
+              .length,
+          2,
+        );
+      },
+    );
+
+    /// ```gherkin
+    /// Scenario: Run planning replies from an ephemeral worktree
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing a planning mention
+    ///   And a responder that records its working directory before returning a reply
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then the responder runs from an ephemeral worktree instead of the source checkout
+    ///   And the ephemeral worktree directory is cleaned up afterwards
+    /// ```
+    test('Run planning replies from an ephemeral worktree', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-planning-project-path-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      final worktreeRoot = await Directory(
+        p.join(sandbox.path, 'worktrees'),
+      ).create();
+      await initGitRepo(repoDir);
+
+      // And GitHub issue data containing a planning mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final issueData = [
+        {
+          'number': 25,
+          'title': 'Need planning help',
+          'body': 'Please review the service layout.',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/25',
+          'updated_at': '2026-04-04T15:35:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 250,
+          'body': '@helper can you plan the service layout?',
+          'html_url': 'https://example.test/issues/25#issuecomment-250',
+          'created_at': '2026-04-04T15:35:00Z',
+          'updated_at': '2026-04-04T15:35:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {25: commentsData},
+        postCommentIssueNumber: 25,
+      );
+
+      // And a responder that records its working directory before returning a reply.
+      final cwdCapture = File(p.join(sandbox.path, 'planning.cwd'));
+      final responderScript = File(
+        p.join(sandbox.path, 'planning-responder.sh'),
+      );
+      await responderScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+pwd > "${cwdCapture.path}"
+cat >/dev/null
+cat <<'JSON'
+{"decision":"reply","mode":"planning","markdown":"planning reply","summary":"used project path"}
+JSON
+''');
       await Process.run('chmod', ['+x', responderScript.path]);
 
       // And an orchestrator-style config pointing to the fake repo and responder.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
+worktreeDir: ${worktreeRoot.path}
 defaults:
   issueAssistant:
     enabled: true
@@ -418,24 +544,13 @@ projects:
       // Then the responder runs from an ephemeral worktree instead of the source checkout.
       final capturedCwd = await cwdCapture.readAsString();
       expect(p.normalize(capturedCwd.trim()), isNot(p.normalize(repoDir.path)));
-
-      // And the responder stdin includes the latest issue comment text.
-      final capturedStdin = await stdinCapture.readAsString();
       expect(
-        capturedStdin,
-        contains('@helper give me your though about this CLI flow'),
+        p.isWithin(worktreeRoot.path, p.normalize(capturedCwd.trim())),
+        isTrue,
       );
 
-      // And the app still posts a GitHub comment because the thread explicitly mentioned the assistant.
-      final logLines = await ghLog.readAsLines();
-      expect(
-        logLines
-            .where(
-              (line) => line.contains('repos/owner/sample/issues/24/comments'),
-            )
-            .length,
-        2,
-      );
+      // And the ephemeral worktree directory is cleaned up afterwards.
+      expect(await worktreeRoot.list().isEmpty, isTrue);
     });
 
     /// ```gherkin
@@ -656,6 +771,176 @@ projects:
         logLines
             .where(
               (line) => line.contains('repos/owner/sample/issues/32/comments'),
+            )
+            .length,
+        2,
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Process multiple issues concurrently up to the configured limit
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing three planning mentions
+    ///   And a responder that sleeps for one second while logging each issue number
+    ///   And an orchestrator-style config with maxConcurrentIssues set to three
+    ///   When the app processes one polling cycle
+    ///   Then the cycle completes in under three seconds
+    ///   And all three issues still receive replies
+    /// ```
+    test('Process multiple issues concurrently up to the configured limit', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-concurrent-issues-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And GitHub issue data containing three planning mentions.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final issueData = [
+        {
+          'number': 41,
+          'title': 'First planning request',
+          'body': 'first',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/41',
+          'updated_at': '2026-04-04T16:20:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+        {
+          'number': 42,
+          'title': 'Second planning request',
+          'body': 'second',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/42',
+          'updated_at': '2026-04-04T16:21:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+        {
+          'number': 43,
+          'title': 'Third planning request',
+          'body': 'third',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/43',
+          'updated_at': '2026-04-04T16:22:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      await writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {
+          41: [
+            {
+              'id': 410,
+              'body': '@helper first',
+              'html_url': 'https://example.test/issues/41#issuecomment-410',
+              'created_at': '2026-04-04T16:20:00Z',
+              'updated_at': '2026-04-04T16:20:00Z',
+              'user': {'login': 'reporter'},
+            },
+          ],
+          42: [
+            {
+              'id': 420,
+              'body': '@helper second',
+              'html_url': 'https://example.test/issues/42#issuecomment-420',
+              'created_at': '2026-04-04T16:21:00Z',
+              'updated_at': '2026-04-04T16:21:00Z',
+              'user': {'login': 'reporter'},
+            },
+          ],
+          43: [
+            {
+              'id': 430,
+              'body': '@helper third',
+              'html_url': 'https://example.test/issues/43#issuecomment-430',
+              'created_at': '2026-04-04T16:22:00Z',
+              'updated_at': '2026-04-04T16:22:00Z',
+              'user': {'login': 'reporter'},
+            },
+          ],
+        },
+        postCommentIssueNumbers: {41, 42, 43},
+        ghLog: ghLog,
+      );
+
+      // And a responder that sleeps for one second while logging each issue number.
+      final eventLog = File(p.join(sandbox.path, 'responder-events.log'));
+      final responderScript = File(p.join(sandbox.path, 'responder-slow.sh'));
+      await writeDelayedLoggingResponderScript(
+        responderScript,
+        eventLog: eventLog,
+        delay: const Duration(seconds: 1),
+        response: {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown': 'parallel reply',
+          'summary': 'completed after delay',
+        },
+      );
+
+      // And an orchestrator-style config with maxConcurrentIssues set to three.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    maxConcurrentIssues: 3
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      final stopwatch = Stopwatch()..start();
+      await app.runOnce();
+      stopwatch.stop();
+      await app.close();
+
+      // Then the cycle completes in under three seconds.
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+      final eventLines = await eventLog.readAsLines();
+      expect(eventLines.where((line) => line.startsWith('start:')).length, 3);
+      expect(eventLines.where((line) => line.startsWith('end:')).length, 3);
+
+      // And all three issues still receive replies.
+      final logLines = await ghLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/41/comments'),
+            )
+            .length,
+        2,
+      );
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/42/comments'),
+            )
+            .length,
+        2,
+      );
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/43/comments'),
             )
             .length,
         2,

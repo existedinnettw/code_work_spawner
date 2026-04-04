@@ -27,6 +27,11 @@ class IssueAssistantApp {
   final GitHubClient githubClient;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
+  final Map<String, _ProjectPollState> _projectPollStates = {};
+  final Set<Future<void>> _activePolls = <Future<void>>{};
+  Completer<void>? _runCompleter;
+  bool _isClosing = false;
+  bool _isClosed = false;
 
   static Future<IssueAssistantApp> open({
     required AppConfig config,
@@ -44,9 +49,39 @@ class IssueAssistantApp {
   }
 
   Future<void> run() async {
-    while (true) {
-      await runOnce();
-      await Future<void>.delayed(_smallestPollInterval());
+    if (_isClosed) {
+      throw StateError('IssueAssistantApp is already closed.');
+    }
+    if (_runCompleter != null) {
+      return _runCompleter!.future;
+    }
+
+    final enabledProjects = config.projects.values
+        .where((project) => project.issueAssistant.enabled)
+        .toList(growable: false);
+    if (enabledProjects.isEmpty) {
+      _log('no enabled projects configured');
+      return;
+    }
+
+    final completer = Completer<void>();
+    _runCompleter = completer;
+
+    for (final project in enabledProjects) {
+      final state = _projectPollStates.putIfAbsent(
+        project.key,
+        () => _ProjectPollState(project: project),
+      );
+      unawaited(_triggerProjectPoll(project, source: 'startup'));
+      state.timer = Timer.periodic(project.issueAssistant.pollInterval, (_) {
+        unawaited(_triggerProjectPoll(project, source: 'interval'));
+      });
+    }
+
+    try {
+      await completer.future;
+    } finally {
+      _cancelProjectPollTimers();
     }
   }
 
@@ -62,16 +97,83 @@ class IssueAssistantApp {
     _log('poll cycle completed');
   }
 
-  Future<void> close() => database.close();
+  Future<void> close() async {
+    if (_isClosed || _isClosing) {
+      return;
+    }
 
-  Duration _smallestPollInterval() {
-    return config.projects.values
-        .where((project) => project.issueAssistant.enabled)
-        .map((project) => project.issueAssistant.pollInterval)
-        .fold<Duration>(
-          const Duration(minutes: 5),
-          (current, next) => next < current ? next : current,
+    _isClosing = true;
+    _cancelProjectPollTimers();
+    _completeRunIfPending();
+    await Future.wait(_activePolls.toList(growable: false));
+    await database.close();
+    _isClosed = true;
+    _isClosing = false;
+  }
+
+  Future<void> _triggerProjectPoll(
+    ProjectConfig project, {
+    required String source,
+  }) async {
+    if (_isClosing || _isClosed) {
+      return;
+    }
+
+    final state = _projectPollStates.putIfAbsent(
+      project.key,
+      () => _ProjectPollState(project: project),
+    );
+    if (state.isRunning) {
+      _log(
+        'skip poll project=${project.key} reason=already_running source=$source',
+      );
+      return;
+    }
+
+    late final Future<void> pollFuture;
+    pollFuture = () async {
+      state.isRunning = true;
+      final stopwatch = Stopwatch()..start();
+      _log('poll tick project=${project.key} source=$source');
+      try {
+        await _pollProject(project);
+        stopwatch.stop();
+        _log(
+          'poll tick project=${project.key} source=$source '
+          'duration_ms=${stopwatch.elapsedMilliseconds}',
         );
+      } catch (error, stackTrace) {
+        stopwatch.stop();
+        _logError(
+          'poll tick project=${project.key} source=$source '
+          'duration_ms=${stopwatch.elapsedMilliseconds} error=$error',
+        );
+        _cancelProjectPollTimers();
+        if (!(_runCompleter?.isCompleted ?? true)) {
+          _runCompleter!.completeError(error, stackTrace);
+        }
+      } finally {
+        state.isRunning = false;
+        _activePolls.remove(pollFuture);
+      }
+    }();
+
+    _activePolls.add(pollFuture);
+    await pollFuture;
+  }
+
+  void _cancelProjectPollTimers() {
+    for (final state in _projectPollStates.values) {
+      state.timer?.cancel();
+      state.timer = null;
+    }
+  }
+
+  void _completeRunIfPending() {
+    final completer = _runCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
   }
 
   Future<void> _pollProject(ProjectConfig project) async {
@@ -94,13 +196,21 @@ class IssueAssistantApp {
       );
       _log('project=${project.key} fetched_issues=${issues.length}');
 
-      DateTime? latestSeen = since;
-      for (final issue in issues) {
-        if (latestSeen == null || issue.updatedAt.isAfter(latestSeen)) {
-          latestSeen = issue.updatedAt;
-        }
-        await _processIssue(project, issue);
-      }
+      final latestSeen = issues.map((issue) => issue.updatedAt).fold<DateTime?>(
+        since,
+        (current, next) {
+          if (current == null || next.isAfter(current)) {
+            return next;
+          }
+          return current;
+        },
+      );
+
+      _log(
+        'project=${project.key} issue_queue=${issues.length} '
+        'max_concurrent=${project.issueAssistant.maxConcurrentIssues}',
+      );
+      await _processIssuesConcurrently(project, issues);
 
       await database.upsertProjectState(
         projectKey: project.key,
@@ -121,6 +231,41 @@ class IssueAssistantApp {
       _log('poll project=${project.key} failed error=$error');
       rethrow;
     }
+  }
+
+  Future<void> _processIssuesConcurrently(
+    ProjectConfig project,
+    List<GitHubIssueSummary> issues,
+  ) async {
+    if (issues.isEmpty) {
+      return;
+    }
+
+    var nextIndex = 0;
+    Future<void> worker() async {
+      while (true) {
+        final currentIndex = nextIndex;
+        if (currentIndex >= issues.length) {
+          return;
+        }
+        nextIndex += 1;
+        final activeCount =
+            currentIndex + 1 <= project.issueAssistant.maxConcurrentIssues
+            ? currentIndex + 1
+            : project.issueAssistant.maxConcurrentIssues;
+        _log(
+          'project=${project.key} process_issue issue=${issues[currentIndex].number} '
+          'queue_index=${currentIndex + 1}/${issues.length} active_limit=$activeCount',
+        );
+        await _processIssue(project, issues[currentIndex]);
+      }
+    }
+
+    final workerCount =
+        issues.length < project.issueAssistant.maxConcurrentIssues
+        ? issues.length
+        : project.issueAssistant.maxConcurrentIssues;
+    await Future.wait([for (var i = 0; i < workerCount; i += 1) worker()]);
   }
 
   Future<void> _processIssue(
@@ -192,93 +337,98 @@ class IssueAssistantApp {
     }
 
     ResponderResult? selectedResult;
-    String? workspacePath;
     Object? lastError;
+    final needsWorktree = _looksLikeBugVerification(thread);
+    final workspacePath = await workspaceManager.createEphemeralWorktree(
+      project.path,
+    );
+    _log(
+      'issue=${project.key}#${issue.number} workspace_mode='
+      'worktree workspace=$workspacePath',
+    );
 
-    for (final responder in project.issueAssistant.responders) {
-      final needsWorktree = _looksLikeBugVerification(thread);
-      workspacePath = await workspaceManager.createEphemeralWorktree(
-        project.path,
-      );
-      _log(
-        'run responder=${responder.id} issue=${project.key}#${issue.number} '
-        'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
-        'workspace=$workspacePath',
-      );
-
-      try {
-        final result = await responderRunner.run(
-          responder: responder,
-          project: project,
-          thread: thread,
-          prompt: prompt,
-          forceReply: forceReply,
-          workspacePath: workspacePath,
-        );
-        await database.addExecutionRun(
-          jobId: jobId,
-          responderId: result.responderId,
-          mode: result.mode,
-          decision: result.decision,
-          success: true,
-          workspacePath: workspacePath,
-          stdout: result.rawStdout,
-          stderr: result.rawStderr,
-        );
-        _logResponderOutput(
-          responderId: responder.id,
-          issueKey: '${project.key}#${issue.number}',
-          stdout: result.rawStdout,
-          stderr: result.rawStderr,
-        );
+    try {
+      for (final responder in project.issueAssistant.responders) {
         _log(
-          'responder=${responder.id} issue=${project.key}#${issue.number}, '
-          'title="${thread.issue.title}", '
-          'decision=${result.decision}, mode=${result.mode}',
+          'run responder=${responder.id} issue=${project.key}#${issue.number} '
+          'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
+          'workspace=$workspacePath',
         );
-        selectedResult = forceReply && !result.shouldReply
-            ? result.forceReply()
-            : result;
-        if (forceReply && !result.shouldReply) {
+
+        try {
+          final result = await responderRunner.run(
+            responder: responder,
+            project: project,
+            thread: thread,
+            prompt: prompt,
+            forceReply: forceReply,
+            workspacePath: workspacePath,
+          );
+          await database.addExecutionRun(
+            jobId: jobId,
+            responderId: result.responderId,
+            mode: result.mode,
+            decision: result.decision,
+            success: true,
+            workspacePath: workspacePath,
+            stdout: result.rawStdout,
+            stderr: result.rawStderr,
+          );
+          _logResponderOutput(
+            responderId: responder.id,
+            issueKey: '${project.key}#${issue.number}',
+            stdout: result.rawStdout,
+            stderr: result.rawStderr,
+          );
+          _log(
+            'responder=${responder.id} issue=${project.key}#${issue.number}, '
+            'title="${thread.issue.title}", '
+            'decision=${result.decision}, mode=${result.mode}',
+          );
+          selectedResult = forceReply && !result.shouldReply
+              ? result.forceReply()
+              : result;
+          if (forceReply && !result.shouldReply) {
+            _log(
+              'responder=${responder.id} issue=${project.key}#${issue.number} '
+              'override=force_reply original_decision=${result.decision}',
+            );
+          }
+          break;
+        } catch (error) {
+          lastError = error;
+          final rawStdout = switch (error) {
+            CliResponderExecutionException(:final rawStdout) => rawStdout,
+            _ => '',
+          };
+          final rawStderr = switch (error) {
+            CliResponderExecutionException(:final rawStderr) => rawStderr,
+            _ => error.toString(),
+          };
+          _logResponderOutput(
+            responderId: responder.id,
+            issueKey: '${project.key}#${issue.number}',
+            stdout: rawStdout,
+            stderr: rawStderr,
+          );
           _log(
             'responder=${responder.id} issue=${project.key}#${issue.number} '
-            'override=force_reply original_decision=${result.decision}',
+            'failed error=$error',
+          );
+          await database.addExecutionRun(
+            jobId: jobId,
+            responderId: responder.id,
+            mode: 'error',
+            decision: 'no_reply',
+            success: false,
+            workspacePath: workspacePath,
+            stdout: rawStdout,
+            stderr: rawStderr,
           );
         }
-        break;
-      } catch (error) {
-        lastError = error;
-        final rawStdout = switch (error) {
-          CliResponderExecutionException(:final rawStdout) => rawStdout,
-          _ => '',
-        };
-        final rawStderr = switch (error) {
-          CliResponderExecutionException(:final rawStderr) => rawStderr,
-          _ => error.toString(),
-        };
-        _logResponderOutput(
-          responderId: responder.id,
-          issueKey: '${project.key}#${issue.number}',
-          stdout: rawStdout,
-          stderr: rawStderr,
-        );
-        _log(
-          'responder=${responder.id} issue=${project.key}#${issue.number} '
-          'failed error=$error',
-        );
-        await database.addExecutionRun(
-          jobId: jobId,
-          responderId: responder.id,
-          mode: 'error',
-          decision: 'no_reply',
-          success: false,
-          workspacePath: workspacePath,
-          stdout: rawStdout,
-          stderr: rawStderr,
-        );
-      } finally {
-        await workspaceManager.disposeEphemeralWorktree(workspacePath);
       }
+    } finally {
+      await workspaceManager.disposeEphemeralWorktree(workspacePath);
     }
 
     if (selectedResult == null) {
@@ -471,4 +621,12 @@ class IssueAssistantApp {
       _log('responder=$responderId issue=$issueKey stream=stderr\n$stderr');
     }
   }
+}
+
+class _ProjectPollState {
+  _ProjectPollState({required this.project});
+
+  final ProjectConfig project;
+  Timer? timer;
+  bool isRunning = false;
 }

@@ -8,7 +8,8 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
+    pollInterval: 30s
+    maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
     commentPrefixTemplate: |
       > [!NOTE]
