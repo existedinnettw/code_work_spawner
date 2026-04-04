@@ -315,8 +315,6 @@ class IssueAssistantConfig {
   static const String _defaultPrompt = '''
 You are a GitHub issue thread assistant.
 
-You will receive repository metadata, the current issue thread as JSON, and the latest trigger context.
-
 Decide whether to reply. Rules:
 - If the latest trigger explicitly mentions the assistant, always return "reply".
 - If the discussion already has a good enough answer, return "no_reply".
@@ -332,6 +330,23 @@ JSON schema:
   "markdown": "markdown response, omitted for no_reply",
   "summary": "short internal summary"
 }
+
+Repository metadata:
+- repo: {{repo}}
+- project_key: {{project_key}}
+- project_path: {{project_path}}
+- issue_number: {{issue_number}}
+- issue_title: {{issue_title}}
+- issue_url: {{issue_url}}
+- mention_triggers: {{mention_triggers}}
+- trigger: {{trigger}}
+- capabilities: {{capabilities}}
+
+Issue body:
+{{issue_body}}
+
+Current issue thread JSON:
+{{thread_json}}
 ''';
 }
 

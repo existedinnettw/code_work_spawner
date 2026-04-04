@@ -9,7 +9,7 @@ defaults:
   issueAssistant:
     enabled: true
     pollInterval: 5m
-    mentionTriggers: ["@codex"]
+    mentionTriggers: ["@codex", "@helper"]
     responders:
       # Replace this with a responder available on your machine.
       - id: codex

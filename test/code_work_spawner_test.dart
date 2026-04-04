@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -425,6 +426,219 @@ projects:
     );
 
     /// ```gherkin
+    /// Scenario: Log raw responder output for debugging
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing an explicit assistant mention
+    ///   And a responder that writes stderr diagnostics alongside a no_reply JSON payload
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle while app logs are captured
+    ///   Then the application logs include the responder stdout payload
+    ///   And the application logs include the responder stderr diagnostics
+    /// ```
+    test('Log raw responder output for debugging', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp('cws-log-output-');
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await _initGitRepo(repoDir);
+
+      // And GitHub issue data containing an explicit assistant mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final issueData = [
+        {
+          'number': 21,
+          'title': 'Need responder diagnostics',
+          'body': 'Inspect the responder output.',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/21',
+          'updated_at': '2026-04-04T14:10:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 210,
+          'body': '@helper please explain why you skipped this',
+          'html_url': 'https://example.test/issues/21#issuecomment-210',
+          'created_at': '2026-04-04T14:10:00Z',
+          'updated_at': '2026-04-04T14:10:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await _writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {21: commentsData},
+        postCommentIssueNumber: 21,
+      );
+
+      // And a responder that writes stderr diagnostics alongside a no_reply JSON payload.
+      final responderScript = File(p.join(sandbox.path, 'responder-debug.sh'));
+      await _writeResponderScript(responderScript, {
+        'decision': 'no_reply',
+        'mode': 'planning',
+        'summary': 'diagnostic skip',
+      }, stderr: 'codex diagnostic trace');
+
+      // And an orchestrator-style config pointing to the fake repo and responder.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+      final logMessages = <String>[];
+      final previousLevel = Logger.root.level;
+      Logger.root.level = Level.INFO;
+      final subscription = Logger.root.onRecord.listen((record) {
+        logMessages.add(record.message);
+      });
+
+      // When the app processes one polling cycle while app logs are captured.
+      await app.runOnce();
+      await subscription.cancel();
+      Logger.root.level = previousLevel;
+      await app.close();
+
+      // Then the application logs include the responder stdout payload.
+      expect(logMessages.join('\n'), contains('"decision":"no_reply"'));
+
+      // And the application logs include the responder stderr diagnostics.
+      expect(logMessages.join('\n'), contains('codex diagnostic trace'));
+    });
+
+    /// ```gherkin
+    /// Scenario: Run mention replies from an ephemeral worktree with issue context
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing an explicit assistant mention
+    ///   And a responder that records its working directory and stdin before returning no_reply
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then the responder runs from an ephemeral worktree instead of the source checkout
+    ///   And the responder stdin includes the latest issue comment text
+    ///   And the app still posts a GitHub comment because the thread explicitly mentioned the assistant
+    /// ```
+    test('Run mention replies from an ephemeral worktree with issue context', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-mention-worktree-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await _initGitRepo(repoDir);
+
+      // And GitHub issue data containing an explicit assistant mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final issueData = [
+        {
+          'number': 24,
+          'title': 'Need your thoughts',
+          'body': 'Please review the CLI workflow.',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/24',
+          'updated_at': '2026-04-04T15:30:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 240,
+          'body': '@helper give me your though about this CLI flow',
+          'html_url': 'https://example.test/issues/24#issuecomment-240',
+          'created_at': '2026-04-04T15:30:00Z',
+          'updated_at': '2026-04-04T15:30:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await _writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {24: commentsData},
+        ghLog: ghLog,
+        postCommentIssueNumber: 24,
+      );
+
+      // And a responder that records its working directory and stdin before returning no_reply.
+      final cwdCapture = File(p.join(sandbox.path, 'responder.cwd'));
+      final stdinCapture = File(p.join(sandbox.path, 'responder.stdin'));
+      final responderScript = File(
+        p.join(sandbox.path, 'responder-capture.sh'),
+      );
+      await responderScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+pwd > "${cwdCapture.path}"
+cat > "${stdinCapture.path}"
+cat <<'JSON'
+{"decision":"no_reply","mode":"planning","summary":"captured mention context"}
+JSON
+''');
+      await Process.run('chmod', ['+x', responderScript.path]);
+
+      // And an orchestrator-style config pointing to the fake repo and responder.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      await app.close();
+
+      // Then the responder runs from an ephemeral worktree instead of the source checkout.
+      final capturedCwd = await cwdCapture.readAsString();
+      expect(p.normalize(capturedCwd.trim()), isNot(p.normalize(repoDir.path)));
+
+      // And the responder stdin includes the latest issue comment text.
+      final capturedStdin = await stdinCapture.readAsString();
+      expect(
+        capturedStdin,
+        contains('@helper give me your though about this CLI flow'),
+      );
+
+      // And the app still posts a GitHub comment because the thread explicitly mentioned the assistant.
+      final logLines = await ghLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/24/comments'),
+            )
+            .length,
+        2,
+      );
+    });
+
+    /// ```gherkin
     /// Scenario: Accept codex style jsonl responder output
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And GitHub issue data containing an explicit assistant mention
@@ -671,14 +885,18 @@ Future<void> _writeFakeGhScript({
 
 Future<void> _writeResponderScript(
   File responderScript,
-  Map<String, Object?> response,
-) async {
+  Map<String, Object?> response, {
+  String stderr = '',
+  int exitCode = 0,
+}) async {
   await responderScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
 cat >/dev/null
+${stderr.isEmpty ? '' : "printf '%s\\n' ${jsonEncode(stderr)} >&2"}
 cat <<'JSON'
 ${jsonEncode(response)}
 JSON
+exit $exitCode
 ''');
   await Process.run('chmod', ['+x', responderScript.path]);
 }

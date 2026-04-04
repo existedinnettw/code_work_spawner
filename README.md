@@ -74,7 +74,7 @@ AO-style `dataDir`, `worktreeDir`, and core `projects` fields, and uses
 ## Run
 
 ```bash
-dart run build_runner build
+dart run build_runner build --delete-conflicting-outputs
 ```
 
 Single poll cycle:

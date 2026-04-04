@@ -197,9 +197,9 @@ class IssueAssistantApp {
 
     for (final responder in project.issueAssistant.responders) {
       final needsWorktree = _looksLikeBugVerification(thread);
-      workspacePath = needsWorktree
-          ? await workspaceManager.createEphemeralWorktree(project.path)
-          : project.path;
+      workspacePath = await workspaceManager.createEphemeralWorktree(
+        project.path,
+      );
       _log(
         'run responder=${responder.id} issue=${project.key}#${issue.number} '
         'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
@@ -225,15 +225,43 @@ class IssueAssistantApp {
           stdout: result.rawStdout,
           stderr: result.rawStderr,
         );
+        _logResponderOutput(
+          responderId: responder.id,
+          issueKey: '${project.key}#${issue.number}',
+          stdout: result.rawStdout,
+          stderr: result.rawStderr,
+        );
         _log(
-          'responder=${responder.id}b issue=${project.key}#${issue.number}, '
+          'responder=${responder.id} issue=${project.key}#${issue.number}, '
           'title="${thread.issue.title}", '
           'decision=${result.decision}, mode=${result.mode}',
         );
-        selectedResult = result;
+        selectedResult = forceReply && !result.shouldReply
+            ? result.forceReply()
+            : result;
+        if (forceReply && !result.shouldReply) {
+          _log(
+            'responder=${responder.id} issue=${project.key}#${issue.number} '
+            'override=force_reply original_decision=${result.decision}',
+          );
+        }
         break;
       } catch (error) {
         lastError = error;
+        final rawStdout = switch (error) {
+          CliResponderExecutionException(:final rawStdout) => rawStdout,
+          _ => '',
+        };
+        final rawStderr = switch (error) {
+          CliResponderExecutionException(:final rawStderr) => rawStderr,
+          _ => error.toString(),
+        };
+        _logResponderOutput(
+          responderId: responder.id,
+          issueKey: '${project.key}#${issue.number}',
+          stdout: rawStdout,
+          stderr: rawStderr,
+        );
         _log(
           'responder=${responder.id} issue=${project.key}#${issue.number} '
           'failed error=$error',
@@ -245,11 +273,11 @@ class IssueAssistantApp {
           decision: 'no_reply',
           success: false,
           workspacePath: workspacePath,
-          stdout: '',
-          stderr: error.toString(),
+          stdout: rawStdout,
+          stderr: rawStderr,
         );
       } finally {
-        if (workspacePath != project.path) {
+        if (workspacePath != null) {
           await workspaceManager.disposeEphemeralWorktree(workspacePath);
         }
       }
@@ -392,5 +420,19 @@ class IssueAssistantApp {
 
   void _logError(String message) {
     _logger.severe(message);
+  }
+
+  void _logResponderOutput({
+    required String responderId,
+    required String issueKey,
+    required String stdout,
+    required String stderr,
+  }) {
+    if (stdout.isNotEmpty) {
+      _log('responder=$responderId issue=$issueKey stream=stdout\n$stdout');
+    }
+    if (stderr.isNotEmpty) {
+      _log('responder=$responderId issue=$issueKey stream=stderr\n$stderr');
+    }
   }
 }

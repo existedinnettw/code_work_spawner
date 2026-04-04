@@ -61,11 +61,13 @@ class CliResponderRunner {
     final stdoutText = await stdoutFuture;
     final stderrText = await stderrFuture;
     if (exitCode != 0) {
-      throw ProcessException(
-        responder.command,
-        responder.args,
-        stderrText.isEmpty ? stdoutText : stderrText,
-        exitCode,
+      throw CliResponderExecutionException(
+        responderId: responder.id,
+        command: responder.command,
+        arguments: responder.args,
+        exitCode: exitCode,
+        rawStdout: stdoutText,
+        rawStderr: stderrText,
       );
     }
 
@@ -142,6 +144,31 @@ class CliResponderRunner {
   }
 }
 
+class CliResponderExecutionException implements Exception {
+  CliResponderExecutionException({
+    required this.responderId,
+    required this.command,
+    required this.arguments,
+    required this.exitCode,
+    required this.rawStdout,
+    required this.rawStderr,
+  });
+
+  final String responderId;
+  final String command;
+  final List<String> arguments;
+  final int exitCode;
+  final String rawStdout;
+  final String rawStderr;
+
+  @override
+  String toString() {
+    final details = rawStderr.isEmpty ? rawStdout : rawStderr;
+    return 'CliResponderExecutionException(responderId: $responderId, '
+        'command: $command, exitCode: $exitCode, details: $details)';
+  }
+}
+
 class ResponderResult {
   ResponderResult({
     required this.responderId,
@@ -162,6 +189,23 @@ class ResponderResult {
   final String rawStderr;
 
   bool get shouldReply => decision == 'reply';
+
+  ResponderResult forceReply() {
+    final fallbackMarkdown = markdown.isNotEmpty
+        ? markdown
+        : summary.isNotEmpty
+        ? summary
+        : 'I reviewed the latest mention but could not produce a detailed response.';
+    return ResponderResult(
+      responderId: responderId,
+      decision: 'reply',
+      mode: mode,
+      markdown: fallbackMarkdown,
+      summary: summary,
+      rawStdout: rawStdout,
+      rawStderr: rawStderr,
+    );
+  }
 
   factory ResponderResult.fromJson(
     Map<String, dynamic> json, {
