@@ -186,7 +186,7 @@ projects:
     ///   Given camelCase config with default notifications and a project-specific notification override
     ///   When loading the app config from disk
     ///   Then the project replaces inherited notifications with its own list
-    ///   And notification event enums are parsed from snake_case values
+    ///   And notification enums are parsed from their config values
     /// ```
     test('Merge notification defaults with project overrides', () async {
       // Given camelCase config with default notifications and a project-specific notification override.
@@ -228,10 +228,52 @@ projects:
       expect(notification.webhookUrl, 'https://project.example.test/webhook');
       expect(notification.username, 'cws');
 
-      // And notification event enums are parsed from snake_case values.
+      // And notification enums are parsed from their config values.
       expect(notification.events, {
         NotificationEvent.responderFailed,
         NotificationEvent.noReply,
+      });
+      expect(notification.type, NotificationType.discordWebhook);
+    });
+
+    /// ```gherkin
+    /// Scenario: Load a desktop notifier from config
+    ///   Given camelCase config with a desktop notifier
+    ///   When loading the app config from disk
+    ///   Then the notifier type is parsed from the config value
+    ///   And the configured events are available to the app
+    /// ```
+    test('Load a desktop notifier from config', () async {
+      // Given camelCase config with a desktop notifier.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-desktop-notification-config-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    notifications:
+      - type: desktop
+        enabled: true
+        events: ["mention_detected", "reply_posted"]
+projects:
+  sample:
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the notifier type is parsed from the config value.
+      final notification =
+          config.projects['sample']!.issueAssistant.notifications.single;
+      expect(notification.type, NotificationType.desktop);
+
+      // And the configured events are available to the app.
+      expect(notification.events, {
+        NotificationEvent.mentionDetected,
+        NotificationEvent.replyPosted,
       });
     });
 

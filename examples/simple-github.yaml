@@ -30,13 +30,17 @@ defaults:
       # - id: opencode
       #   command: opencode
       #   timeout: 10m
-    notifications:
-      # Optional Discord notifications for assistant activity.
-      - type: discordWebhook
-        enabled: true
-        events: ["mention_detected", "reply_posted", "responder_failed"]
-        webhookUrl: ${CWS_DISCORD_WEBHOOK}
-        username: code-work-spawner
+    # notifications:
+    #   # Optional Discord notifications for assistant activity.
+    #   - type: discordWebhook
+    #     enabled: true
+    #     events: ["mention_detected", "reply_posted", "responder_failed"]
+    #     webhookUrl: ${CWS_DISCORD_WEBHOOK}
+    #     username: code-work-spawner
+    #   # Optional desktop notifications for local polling runs.
+    #   - type: desktop
+    #     enabled: false
+    #     events: ["mention_detected", "responder_failed"]
 
 projects:
   code-work-spawner:
