@@ -37,6 +37,8 @@ void main() {
       final stdoutText = result.stdout as String;
       expect(stdoutText, contains('dataDir:'));
       expect(stdoutText, contains('# responders:'));
+      expect(stdoutText, contains('# notifications:'));
+      expect(stdoutText, contains(r'#     webhookUrl: ${CWS_DISCORD_WEBHOOK}'));
       expect(stdoutText, contains('projects:'));
 
       // And the printed config is valid when written to disk and loaded.

@@ -182,6 +182,60 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Merge notification defaults with project overrides
+    ///   Given camelCase config with default notifications and a project-specific notification override
+    ///   When loading the app config from disk
+    ///   Then the project replaces inherited notifications with its own list
+    ///   And notification event enums are parsed from snake_case values
+    /// ```
+    test('Merge notification defaults with project overrides', () async {
+      // Given camelCase config with default notifications and a project-specific notification override.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-notification-config-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    notifications:
+      - type: discordWebhook
+        enabled: true
+        events: ["reply_posted"]
+        webhookUrl: https://default.example.test/webhook
+projects:
+  sample:
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      notifications:
+        - type: discordWebhook
+          enabled: true
+          events: ["responder_failed", "no_reply"]
+          webhookUrl: https://project.example.test/webhook
+          username: cws
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project replaces inherited notifications with its own list.
+      expect(
+        config.projects['sample']!.issueAssistant.notifications,
+        hasLength(1),
+      );
+      final notification =
+          config.projects['sample']!.issueAssistant.notifications.single;
+      expect(notification.webhookUrl, 'https://project.example.test/webhook');
+      expect(notification.username, 'cws');
+
+      // And notification event enums are parsed from snake_case values.
+      expect(notification.events, {
+        NotificationEvent.responderFailed,
+        NotificationEvent.noReply,
+      });
+    });
+
+    /// ```gherkin
     /// Scenario: Load camelCase config with shared worktree root
     ///   Given camelCase config with dataDir, worktreeDir, and project settings
     ///   When loading the app config from disk

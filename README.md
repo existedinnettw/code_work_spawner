@@ -11,6 +11,8 @@ issue comments, and uses configured CLI responders such as `codex`,
   useful
 
 It supports multi-repo configuration, responder fallback chains.
+It can also emit non-fatal Discord webhook notifications for issue assistant
+events such as mentions, replies, no-reply decisions, and responder failures.
 
 ## Features
 
@@ -20,6 +22,7 @@ It supports multi-repo configuration, responder fallback chains.
 - Planning / architecture guidance in issue threads
 - Bug verification flows in isolated temporary git worktrees
 - CLI-based responder fallback chain
+- Optional Discord webhook notifications
 - Durable state with `drift` + SQLite
 - BDD-style tests using `package:test` with Given / When / Then wording
 
@@ -33,6 +36,10 @@ It supports multi-repo configuration, responder fallback chains.
 ## Config
 
 Create a local `agent-orchestrator.yaml` and follow [`/examples/README.md`](examples/README.md) as a starting point.
+
+Notification config lives under `defaults.issueAssistant.notifications` or
+`projects.<key>.issueAssistant.notifications`. Supported events are
+`mention_detected`, `reply_posted`, `no_reply`, and `responder_failed`.
 
 Generate a starter config:
 
