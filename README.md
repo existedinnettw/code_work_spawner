@@ -5,14 +5,14 @@ GitHub issue thread assistant with an Agent Orchestrator style YAML config.
 It polls configured GitHub repositories with `gh`, reads issue threads, and
 uses CLI responders such as `codex`, `opencode`, or `copilot-cli` to decide
 when to reply. It supports multi-repo config, responder fallback chains, and
-optional Discord webhook notifications.
+optional Discord webhook and desktop notifications.
 
 ## Highlights
 
 - Poll GitHub issues across multiple repositories
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
-- Send optional Discord notifications for assistant events
+- Send optional Discord or desktop notifications for assistant events
 
 ## Requirements
 

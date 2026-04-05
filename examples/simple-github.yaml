@@ -37,6 +37,10 @@ defaults:
         events: ["mention_detected", "reply_posted", "responder_failed"]
         webhookUrl: ${CWS_DISCORD_WEBHOOK}
         username: code-work-spawner
+      # Optional desktop notifications for local polling runs.
+      - type: desktop
+        enabled: false
+        events: ["mention_detected", "responder_failed"]
 
 projects:
   code-work-spawner:

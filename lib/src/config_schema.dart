@@ -177,7 +177,7 @@ class NotificationConfigDocument {
 @JsonEnum(fieldRename: FieldRename.snake)
 enum AssistantCapability { planning, bugVerification }
 
-enum NotificationType { discordWebhook }
+enum NotificationType { discordWebhook, desktop }
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum NotificationEvent {

@@ -624,6 +624,9 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     #     events: ["reply_posted", "responder_failed"]
     #     webhookUrl: \${CWS_DISCORD_WEBHOOK}
     #     username: code-work-spawner
+    #   - type: desktop
+    #     enabled: true
+    #     events: ["mention_detected", "responder_failed"]
 
 ${_YamlEmitter().write({'projects': projectsSection})}
 
