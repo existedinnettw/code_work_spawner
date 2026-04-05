@@ -22,6 +22,7 @@ class GitHubClient {
     final queryParts = <String>[
       for (final repo in repoList) 'repo:${repo.fullName}',
       'is:issue',
+      'state:open',
       if (since != null) 'updated:>=${since.toUtc().toIso8601String()}',
     ];
 

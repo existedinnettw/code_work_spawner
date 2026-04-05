@@ -50,6 +50,19 @@ Future<void> writeFakeGhScript({
           final rightUpdatedAt = right['updated_at'] as String? ?? '';
           return leftUpdatedAt.compareTo(rightUpdatedAt);
         });
+  final openSearchItems = searchItems
+      .where((item) => item['state'] == 'open')
+      .toList(growable: false);
+  final allSearchResponse = jsonEncode({
+    'total_count': searchItems.length,
+    'incomplete_results': false,
+    'items': searchItems,
+  });
+  final openSearchResponse = jsonEncode({
+    'total_count': openSearchItems.length,
+    'incomplete_results': false,
+    'items': openSearchItems,
+  });
 
   final buffer = StringBuffer()
     ..writeln('#!/usr/bin/env bash')
@@ -79,15 +92,21 @@ Future<void> writeFakeGhScript({
 
   buffer
     ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
+    ..writeln(r'''  query=""''')
+    ..writeln(r'''  for arg in "$@"; do''')
+    ..writeln(r'''    if [[ "$arg" == q=* ]]; then''')
+    ..writeln(r'''      query="${arg#q=}"''')
+    ..writeln(r'''    fi''')
+    ..writeln(r'''  done''')
+    ..writeln(r'''  if [[ "$query" == *"state:open"* ]]; then''')
     ..writeln("  cat <<'JSON'")
-    ..writeln(
-      jsonEncode({
-        'total_count': searchItems.length,
-        'incomplete_results': false,
-        'items': searchItems,
-      }),
-    )
+    ..writeln(openSearchResponse)
     ..writeln('JSON')
+    ..writeln(r'''  else''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(allSearchResponse)
+    ..writeln('JSON')
+    ..writeln(r'''  fi''')
     ..writeln('  exit 0')
     ..writeln('fi');
 

@@ -1261,109 +1261,135 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Aggregate one search request across multiple enabled projects
+    /// Scenario: Aggregate one search request across multiple enabled projects while ignoring closed issues
     ///   Given two temporary project checkouts that can be used as local repo paths
     ///   And GitHub issue data containing an explicit assistant mention in each repository
+    ///   And one of the search results is a closed issue
     ///   And a responder that emits a planning reply
     ///   And an orchestrator-style config with both repositories enabled
     ///   When the app processes one polling cycle
-    ///   Then it fetches issue updates through one aggregate GitHub search request
+    ///   Then it fetches issue updates through one aggregate GitHub search request for open issues only
     ///   And it still posts one reply in each repository
     /// ```
-    test('Aggregate one search request across multiple enabled projects', () async {
-      // Given two temporary project checkouts that can be used as local repo paths.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-aggregate-search-',
-      );
-      final repoOneDir = await Directory(
-        p.join(sandbox.path, 'repo-one'),
-      ).create();
-      final repoTwoDir = await Directory(
-        p.join(sandbox.path, 'repo-two'),
-      ).create();
-      await initGitRepo(repoOneDir);
-      await initGitRepo(repoTwoDir);
+    test(
+      'Aggregate one search request across multiple enabled projects while ignoring closed issues',
+      () async {
+        // Given two temporary project checkouts that can be used as local repo paths.
+        final sandbox = await Directory.systemTemp.createTemp(
+          'cws-aggregate-search-',
+        );
+        final repoOneDir = await Directory(
+          p.join(sandbox.path, 'repo-one'),
+        ).create();
+        final repoTwoDir = await Directory(
+          p.join(sandbox.path, 'repo-two'),
+        ).create();
+        await initGitRepo(repoOneDir);
+        await initGitRepo(repoTwoDir);
 
-      // And GitHub issue data containing an explicit assistant mention in each repository.
-      final ghScript = File(p.join(sandbox.path, 'gh'));
-      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
-      await writeFakeGhScript(
-        ghScript: ghScript,
-        issueListResponse: const [],
-        commentResponses: const {},
-        issueListResponsesByRepo: {
-          'owner/repo-one': [
-            {
-              'number': 11,
-              'title': 'Repo one mention',
-              'body': 'first repo',
-              'state': 'open',
-              'html_url': 'https://example.test/owner/repo-one/issues/11',
-              'updated_at': '2026-04-04T17:00:00Z',
-              'user': {'login': 'reporter-one'},
-              'labels': const [],
-            },
-          ],
-          'owner/repo-two': [
-            {
-              'number': 22,
-              'title': 'Repo two mention',
-              'body': 'second repo',
-              'state': 'open',
-              'html_url': 'https://example.test/owner/repo-two/issues/22',
-              'updated_at': '2026-04-04T17:01:00Z',
-              'user': {'login': 'reporter-two'},
-              'labels': const [],
-            },
-          ],
-        },
-        commentResponsesByRepo: {
-          'owner/repo-one': {
-            11: [
+        // And GitHub issue data containing an explicit assistant mention in each repository.
+        final ghScript = File(p.join(sandbox.path, 'gh'));
+        final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+        await writeFakeGhScript(
+          ghScript: ghScript,
+          issueListResponse: const [],
+          commentResponses: const {},
+          issueListResponsesByRepo: {
+            'owner/repo-one': [
               {
-                'id': 110,
-                'body': '@helper please review repo one',
-                'html_url':
-                    'https://example.test/owner/repo-one/issues/11#issuecomment-110',
-                'created_at': '2026-04-04T17:00:00Z',
+                'number': 11,
+                'title': 'Repo one mention',
+                'body': 'first repo',
+                'state': 'open',
+                'html_url': 'https://example.test/owner/repo-one/issues/11',
                 'updated_at': '2026-04-04T17:00:00Z',
                 'user': {'login': 'reporter-one'},
+                'labels': const [],
               },
             ],
-          },
-          'owner/repo-two': {
-            22: [
+            'owner/repo-two': [
               {
-                'id': 220,
-                'body': '@helper please review repo two',
-                'html_url':
-                    'https://example.test/owner/repo-two/issues/22#issuecomment-220',
-                'created_at': '2026-04-04T17:01:00Z',
+                'number': 22,
+                'title': 'Repo two mention',
+                'body': 'second repo',
+                'state': 'open',
+                'html_url': 'https://example.test/owner/repo-two/issues/22',
                 'updated_at': '2026-04-04T17:01:00Z',
                 'user': {'login': 'reporter-two'},
+                'labels': const [],
+              },
+              {
+                'number': 23,
+                'title': 'Repo two closed mention',
+                'body': 'closed repo issue',
+                'state': 'closed',
+                'html_url': 'https://example.test/owner/repo-two/issues/23',
+                'updated_at': '2026-04-04T17:02:00Z',
+                'user': {'login': 'reporter-three'},
+                'labels': const [],
               },
             ],
           },
-        },
-        postCommentIssueNumbersByRepo: {
-          'owner/repo-one': {11},
-          'owner/repo-two': {22},
-        },
-        ghLog: ghLog,
-      );
+          commentResponsesByRepo: {
+            'owner/repo-one': {
+              11: [
+                {
+                  'id': 110,
+                  'body': '@helper please review repo one',
+                  'html_url':
+                      'https://example.test/owner/repo-one/issues/11#issuecomment-110',
+                  'created_at': '2026-04-04T17:00:00Z',
+                  'updated_at': '2026-04-04T17:00:00Z',
+                  'user': {'login': 'reporter-one'},
+                },
+              ],
+            },
+            'owner/repo-two': {
+              22: [
+                {
+                  'id': 220,
+                  'body': '@helper please review repo two',
+                  'html_url':
+                      'https://example.test/owner/repo-two/issues/22#issuecomment-220',
+                  'created_at': '2026-04-04T17:01:00Z',
+                  'updated_at': '2026-04-04T17:01:00Z',
+                  'user': {'login': 'reporter-two'},
+                },
+              ],
+              23: [
+                {
+                  'id': 230,
+                  'body': '@helper please review closed repo two',
+                  'html_url':
+                      'https://example.test/owner/repo-two/issues/23#issuecomment-230',
+                  'created_at': '2026-04-04T17:02:00Z',
+                  'updated_at': '2026-04-04T17:02:00Z',
+                  'user': {'login': 'reporter-three'},
+                },
+              ],
+            },
+          },
+          postCommentIssueNumbersByRepo: {
+            'owner/repo-one': {11},
+            'owner/repo-two': {22},
+          },
+          ghLog: ghLog,
+        );
 
-      // And a responder that emits a planning reply.
-      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
-      await writeResponderScript(responderScript, {
-        'decision': 'reply',
-        'mode': 'planning',
-        'markdown': 'aggregate reply',
-        'summary': 'posted planning advice',
-      });
+        // And a responder that emits a planning reply.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await writeResponderScript(responderScript, {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown': 'aggregate reply',
+          'summary': 'posted planning advice',
+        });
 
-      // And an orchestrator-style config with both repositories enabled.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
+        // And an orchestrator-style config with both repositories enabled.
+        final configFile = File(
+          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
 defaults:
   issueAssistant:
     enabled: true
@@ -1380,42 +1406,53 @@ projects:
     repo: owner/repo-two
     path: ${repoTwoDir.path}
 ''');
-      final app = await IssueAssistantApp.open(
-        config: await AppConfig.load(configFile.path),
-        databasePath: p.join(sandbox.path, 'state.sqlite3'),
-        ghCommand: ghScript.path,
-      );
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          ghCommand: ghScript.path,
+        );
 
-      // When the app processes one polling cycle.
-      await app.runOnce();
-      await app.close();
+        // When the app processes one polling cycle.
+        await app.runOnce();
+        await app.close();
 
-      // Then it fetches issue updates through one aggregate GitHub search request.
-      final logLines = await ghLog.readAsLines();
-      expect(
-        logLines.where((line) => line.contains('search/issues')).length,
-        1,
-      );
+        // Then it fetches issue updates through one aggregate GitHub search request for open issues only.
+        final logLines = await ghLog.readAsLines();
+        final searchLogs = logLines
+            .where((line) => line.contains('search/issues'))
+            .toList();
+        expect(searchLogs.length, 1);
+        expect(searchLogs.single, contains('state:open'));
 
-      // And it still posts one reply in each repository.
-      expect(
-        logLines
-            .where(
-              (line) =>
-                  line.contains('repos/owner/repo-one/issues/11/comments'),
-            )
-            .length,
-        2,
-      );
-      expect(
-        logLines
-            .where(
-              (line) =>
-                  line.contains('repos/owner/repo-two/issues/22/comments'),
-            )
-            .length,
-        2,
-      );
-    });
+        // And it still posts one reply in each repository.
+        expect(
+          logLines
+              .where(
+                (line) =>
+                    line.contains('repos/owner/repo-one/issues/11/comments'),
+              )
+              .length,
+          2,
+        );
+        expect(
+          logLines
+              .where(
+                (line) =>
+                    line.contains('repos/owner/repo-two/issues/22/comments'),
+              )
+              .length,
+          2,
+        );
+        expect(
+          logLines
+              .where(
+                (line) =>
+                    line.contains('repos/owner/repo-two/issues/23/comments'),
+              )
+              .length,
+          0,
+        );
+      },
+    );
   });
 }
