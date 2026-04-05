@@ -13,6 +13,7 @@ import 'workspace_manager.dart';
 
 class IssueAssistantApp {
   static final Logger _logger = Logger('code_work_spawner.app');
+  static const Duration _pollCoalescingWindow = Duration(seconds: 2);
 
   IssueAssistantApp._({
     required this.config,
@@ -29,6 +30,7 @@ class IssueAssistantApp {
   final WorkspaceManager workspaceManager;
   final Map<String, _ProjectPollState> _projectPollStates = {};
   final Set<Future<void>> _activePolls = <Future<void>>{};
+  Timer? _schedulerTimer;
   Completer<void>? _runCompleter;
   bool _isClosing = false;
   bool _isClosed = false;
@@ -67,33 +69,37 @@ class IssueAssistantApp {
     final completer = Completer<void>();
     _runCompleter = completer;
 
+    final now = DateTime.now();
     for (final project in enabledProjects) {
-      final state = _projectPollStates.putIfAbsent(
+      _projectPollStates.putIfAbsent(
         project.key,
-        () => _ProjectPollState(project: project),
+        () => _ProjectPollState(project: project, nextDueAt: now),
       );
-      unawaited(_triggerProjectPoll(project, source: 'startup'));
-      state.timer = Timer.periodic(project.issueAssistant.pollInterval, (_) {
-        unawaited(_triggerProjectPoll(project, source: 'interval'));
-      });
     }
+    unawaited(_triggerDueProjectPolls(source: 'startup'));
 
     try {
       await completer.future;
     } finally {
-      _cancelProjectPollTimers();
+      _cancelScheduler();
     }
   }
 
   Future<void> runOnce() async {
     _log('starting poll cycle projects=${config.projects.length}');
+    final enabledProjects = <ProjectConfig>[];
     for (final project in config.projects.values) {
       if (!project.issueAssistant.enabled) {
         _log('skip project=${project.key} reason=issue_assistant_disabled');
         continue;
       }
-      await _pollProject(project);
+      enabledProjects.add(project);
     }
+    if (enabledProjects.isEmpty) {
+      _log('no enabled projects configured');
+      return;
+    }
+    await _pollProjects(enabledProjects);
     _log('poll cycle completed');
   }
 
@@ -103,7 +109,7 @@ class IssueAssistantApp {
     }
 
     _isClosing = true;
-    _cancelProjectPollTimers();
+    _cancelScheduler();
     _completeRunIfPending();
     await Future.wait(_activePolls.toList(growable: false));
     await database.close();
@@ -111,50 +117,63 @@ class IssueAssistantApp {
     _isClosing = false;
   }
 
-  Future<void> _triggerProjectPoll(
-    ProjectConfig project, {
-    required String source,
-  }) async {
+  Future<void> _triggerDueProjectPolls({required String source}) async {
     if (_isClosing || _isClosed) {
       return;
     }
 
-    final state = _projectPollStates.putIfAbsent(
-      project.key,
-      () => _ProjectPollState(project: project),
-    );
-    if (state.isRunning) {
-      _log(
-        'skip poll project=${project.key} reason=already_running source=$source',
-      );
+    final now = DateTime.now();
+    final dueStates = _projectPollStates.values
+        .where((state) => !state.isRunning && !state.nextDueAt.isAfter(now))
+        .toList(growable: false);
+    if (dueStates.isEmpty) {
+      _scheduleNextPoll();
       return;
     }
 
     late final Future<void> pollFuture;
     pollFuture = () async {
-      state.isRunning = true;
+      for (final state in dueStates) {
+        state.isRunning = true;
+      }
       final stopwatch = Stopwatch()..start();
-      _log('poll tick project=${project.key} source=$source');
+      final projects = dueStates
+          .map((state) => state.project)
+          .toList(growable: false);
+      _log(
+        'poll tick source=$source projects=${projects.map((p) => p.key).join(",")}',
+      );
       try {
-        await _pollProject(project);
+        await _pollProjects(projects);
         stopwatch.stop();
+        final batchCompletedAt = DateTime.now();
+        for (final state in dueStates) {
+          while (!state.nextDueAt.isAfter(batchCompletedAt)) {
+            state.nextDueAt = state.nextDueAt.add(
+              state.project.issueAssistant.pollInterval,
+            );
+          }
+        }
         _log(
-          'poll tick project=${project.key} source=$source '
+          'poll tick source=$source projects=${projects.map((p) => p.key).join(",")} '
           'duration_ms=${stopwatch.elapsedMilliseconds}',
         );
       } catch (error, stackTrace) {
         stopwatch.stop();
         _logError(
-          'poll tick project=${project.key} source=$source '
+          'poll tick source=$source projects=${projects.map((p) => p.key).join(",")} '
           'duration_ms=${stopwatch.elapsedMilliseconds} error=$error',
         );
-        _cancelProjectPollTimers();
+        _cancelScheduler();
         if (!(_runCompleter?.isCompleted ?? true)) {
           _runCompleter!.completeError(error, stackTrace);
         }
       } finally {
-        state.isRunning = false;
+        for (final state in dueStates) {
+          state.isRunning = false;
+        }
         _activePolls.remove(pollFuture);
+        _scheduleNextPoll();
       }
     }();
 
@@ -162,11 +181,36 @@ class IssueAssistantApp {
     await pollFuture;
   }
 
-  void _cancelProjectPollTimers() {
-    for (final state in _projectPollStates.values) {
-      state.timer?.cancel();
-      state.timer = null;
+  void _cancelScheduler() {
+    _schedulerTimer?.cancel();
+    _schedulerTimer = null;
+  }
+
+  void _scheduleNextPoll() {
+    if (_isClosing || _isClosed || _runCompleter == null) {
+      return;
     }
+    _cancelScheduler();
+
+    DateTime? nextDueAt;
+    for (final state in _projectPollStates.values) {
+      if (state.isRunning) {
+        continue;
+      }
+      if (nextDueAt == null || state.nextDueAt.isBefore(nextDueAt)) {
+        nextDueAt = state.nextDueAt;
+      }
+    }
+    if (nextDueAt == null) {
+      return;
+    }
+
+    final scheduledAt = nextDueAt.add(_pollCoalescingWindow);
+    final delay = scheduledAt.difference(DateTime.now());
+    _schedulerTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_triggerDueProjectPolls(source: 'interval')),
+    );
   }
 
   void _completeRunIfPending() {
@@ -176,59 +220,95 @@ class IssueAssistantApp {
     }
   }
 
-  Future<void> _pollProject(ProjectConfig project) async {
-    final pollRunId = await database.startPollRun(project.key);
-    try {
+  Future<void> _pollProjects(List<ProjectConfig> projects) async {
+    final pollRunIds = <String, int>{};
+    final projectsByRepo = <String, ProjectConfig>{
+      for (final project in projects) project.repoSlug.fullName: project,
+    };
+    final sinceByProject = <String, DateTime?>{};
+    final latestSeenByProject = <String, DateTime?>{};
+
+    for (final project in projects) {
+      pollRunIds[project.key] = await database.startPollRun(project.key);
       final repoDirectory = Directory(project.path);
       final repoExists = await repoDirectory.exists();
       final projectState = await database.findProjectState(project.key);
       final since = projectState?.lastSeenUpdatedAt == null
           ? null
           : DateTime.parse(projectState!.lastSeenUpdatedAt!);
+      sinceByProject[project.key] = since;
+      latestSeenByProject[project.key] = since;
       _log(
         'poll project=${project.key} repo=${project.repo} '
         'path=${project.path} path_exists=$repoExists '
         'since=${since?.toUtc().toIso8601String() ?? "initial"}',
       );
-      final issues = await githubClient.fetchUpdatedIssues(
-        repo: project.repoSlug,
-        since: since,
-      );
-      _log('project=${project.key} fetched_issues=${issues.length}');
+    }
 
-      final latestSeen = issues.map((issue) => issue.updatedAt).fold<DateTime?>(
-        since,
-        (current, next) {
-          if (current == null || next.isAfter(current)) {
-            return next;
-          }
-          return current;
-        },
+    try {
+      final batchSince = sinceByProject.values
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (current, next) {
+            if (current == null || next.isBefore(current)) {
+              return next;
+            }
+            return current;
+          });
+      final issues = await githubClient.fetchUpdatedIssuesForRepos(
+        repos: projects.map((project) => project.repoSlug),
+        since: batchSince,
       );
+      final issuesByProject = <String, List<GitHubIssueSummary>>{
+        for (final project in projects) project.key: <GitHubIssueSummary>[],
+      };
+      for (final issue in issues) {
+        final project = projectsByRepo[issue.repoSlug.fullName];
+        if (project == null) {
+          continue;
+        }
+        final since = sinceByProject[project.key];
+        if (since != null && !issue.updatedAt.isAfter(since)) {
+          continue;
+        }
+        issuesByProject[project.key]!.add(issue);
+        final latestSeen = latestSeenByProject[project.key];
+        if (latestSeen == null || issue.updatedAt.isAfter(latestSeen)) {
+          latestSeenByProject[project.key] = issue.updatedAt;
+        }
+      }
 
-      _log(
-        'project=${project.key} issue_queue=${issues.length} '
-        'max_concurrent=${project.issueAssistant.maxConcurrentIssues}',
-      );
-      await _processIssuesConcurrently(project, issues);
+      for (final project in projects) {
+        final projectIssues = issuesByProject[project.key]!;
+        _log('project=${project.key} fetched_issues=${projectIssues.length}');
+        _log(
+          'project=${project.key} issue_queue=${projectIssues.length} '
+          'max_concurrent=${project.issueAssistant.maxConcurrentIssues}',
+        );
+        await _processIssuesConcurrently(project, projectIssues);
 
-      await database.upsertProjectState(
-        projectKey: project.key,
-        repo: project.repo,
-        lastSeenUpdatedAt: latestSeen,
-      );
-      await database.finishPollRun(pollRunId: pollRunId, success: true);
-      _log(
-        'poll project=${project.key} completed latest_seen='
-        '${latestSeen?.toUtc().toIso8601String() ?? "unchanged"}',
-      );
+        await database.upsertProjectState(
+          projectKey: project.key,
+          repo: project.repo,
+          lastSeenUpdatedAt: latestSeenByProject[project.key],
+        );
+        await database.finishPollRun(
+          pollRunId: pollRunIds.remove(project.key)!,
+          success: true,
+        );
+        _log(
+          'poll project=${project.key} completed latest_seen='
+          '${latestSeenByProject[project.key]?.toUtc().toIso8601String() ?? "unchanged"}',
+        );
+      }
     } catch (error) {
-      await database.finishPollRun(
-        pollRunId: pollRunId,
-        success: false,
-        error: error.toString(),
-      );
-      _log('poll project=${project.key} failed error=$error');
+      for (final entry in pollRunIds.entries) {
+        await database.finishPollRun(
+          pollRunId: entry.value,
+          success: false,
+          error: error.toString(),
+        );
+        _log('poll project=${entry.key} failed error=$error');
+      }
       rethrow;
     }
   }
@@ -624,9 +704,9 @@ class IssueAssistantApp {
 }
 
 class _ProjectPollState {
-  _ProjectPollState({required this.project});
+  _ProjectPollState({required this.project, required this.nextDueAt});
 
   final ProjectConfig project;
-  Timer? timer;
+  DateTime nextDueAt;
   bool isRunning = false;
 }

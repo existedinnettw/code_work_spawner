@@ -8,31 +8,56 @@ class GitHubClient {
 
   final String ghCommand;
   Future<String?>? _authenticatedLoginFuture;
+  static const int _pageSize = 100;
 
-  Future<List<GitHubIssueSummary>> fetchUpdatedIssues({
-    required RepositorySlug repo,
+  Future<List<GitHubIssueSummary>> fetchUpdatedIssuesForRepos({
+    required Iterable<RepositorySlug> repos,
     required DateTime? since,
   }) async {
-    final query = <String, String>{
-      'state': 'all',
-      'sort': 'updated',
-      'direction': 'asc',
-      'per_page': '100',
-      if (since != null) 'since': since.toUtc().toIso8601String(),
-    };
+    final repoList = repos.toList(growable: false);
+    if (repoList.isEmpty) {
+      return const <GitHubIssueSummary>[];
+    }
 
-    final json = await _runJson([
-      'api',
-      '-X',
-      'GET',
-      _buildApiPath(repo, ['issues'], query),
-    ]);
+    final queryParts = <String>[
+      for (final repo in repoList) 'repo:${repo.fullName}',
+      'is:issue',
+      if (since != null) 'updated:>=${since.toUtc().toIso8601String()}',
+    ];
 
-    return (json as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .where((item) => !item.containsKey('pull_request'))
-        .map(GitHubIssueSummary.fromJson)
-        .toList(growable: false);
+    final issues = <GitHubIssueSummary>[];
+    for (var page = 1; true; page += 1) {
+      final json = await _runJson([
+        'api',
+        '-X',
+        'GET',
+        'search/issues',
+        '-f',
+        'q=${queryParts.join(' ')}',
+        '-f',
+        'sort=updated',
+        '-f',
+        'order=asc',
+        '-f',
+        'per_page=$_pageSize',
+        '-f',
+        'page=$page',
+      ]);
+      final items =
+          ((json as Map<String, dynamic>)['items'] as List<dynamic>? ??
+                  const [])
+              .cast<Map<String, dynamic>>();
+      issues.addAll(
+        items
+            .where((item) => !item.containsKey('pull_request'))
+            .map(GitHubIssueSummary.fromSearchJson),
+      );
+      if (items.length < _pageSize) {
+        break;
+      }
+    }
+
+    return issues;
   }
 
   Future<IssueThread> fetchThread({
@@ -129,6 +154,7 @@ class GitHubClient {
 
 class GitHubIssueSummary {
   GitHubIssueSummary({
+    required this.repoSlug,
     required this.number,
     required this.title,
     required this.body,
@@ -139,6 +165,7 @@ class GitHubIssueSummary {
     required this.labels,
   });
 
+  final RepositorySlug repoSlug;
   final int number;
   final String title;
   final String body;
@@ -148,9 +175,58 @@ class GitHubIssueSummary {
   final String userLogin;
   final List<String> labels;
 
+  factory GitHubIssueSummary.fromRepositoryJson(
+    RepositorySlug repo,
+    Map<String, dynamic> json,
+  ) {
+    final labelsNode = json['labels'] as List<dynamic>? ?? const [];
+    return GitHubIssueSummary(
+      repoSlug: repo,
+      number: json['number'] as int,
+      title: json['title'] as String? ?? '',
+      body: json['body'] as String? ?? '',
+      state: json['state'] as String? ?? 'open',
+      url: json['html_url'] as String? ?? '',
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+      userLogin:
+          (json['user'] as Map<String, dynamic>? ?? const {})['login']
+              as String? ??
+          'unknown',
+      labels: labelsNode
+          .map((label) => (label as Map<String, dynamic>)['name'].toString())
+          .toList(growable: false),
+    );
+  }
+
+  factory GitHubIssueSummary.fromSearchJson(Map<String, dynamic> json) {
+    final repositoryUrl = json['repository_url'] as String?;
+    if (repositoryUrl == null || repositoryUrl.isEmpty) {
+      throw const FormatException(
+        'Missing repository_url in GitHub search result item.',
+      );
+    }
+    return GitHubIssueSummary.fromRepositoryJson(
+      _parseRepositorySlugFromRepositoryUrl(repositoryUrl),
+      json,
+    );
+  }
+
+  static RepositorySlug _parseRepositorySlugFromRepositoryUrl(String value) {
+    final uri = Uri.parse(value);
+    final segments = uri.pathSegments;
+    final reposIndex = segments.indexOf('repos');
+    if (reposIndex == -1 || reposIndex + 2 >= segments.length) {
+      throw FormatException(
+        'Invalid repository_url in GitHub search result item: "$value"',
+      );
+    }
+    return RepositorySlug(segments[reposIndex + 1], segments[reposIndex + 2]);
+  }
+
   factory GitHubIssueSummary.fromJson(Map<String, dynamic> json) {
     final labelsNode = json['labels'] as List<dynamic>? ?? const [];
     return GitHubIssueSummary(
+      repoSlug: RepositorySlug('', ''),
       number: json['number'] as int,
       title: json['title'] as String? ?? '',
       body: json['body'] as String? ?? '',
@@ -168,6 +244,7 @@ class GitHubIssueSummary {
   }
 
   Map<String, Object?> toJson() => {
+    'repo': repoSlug.fullName,
     'number': number,
     'title': title,
     'body': body,

@@ -12,6 +12,6 @@ account. Those markers support template variables such as `{{gh_login}}`,
 `{{comment_tag}}`, and `{{fingerprint}}`. Set either template to an empty
 string to disable that section.
 
-Start from [`examples/simple-github.yaml`](examples/simple-github.yaml). This
+Start from [`examples/simple-github.yaml`](simple-github.yaml). This
 repo uses `dataDir`, `worktreeDir`, and `projects`, and uses `worktreeDir` for
 bug-verification worktrees.
