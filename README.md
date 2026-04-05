@@ -2,29 +2,17 @@
 
 GitHub issue thread assistant with an Agent Orchestrator style YAML config.
 
-The app polls configured GitHub repositories with `gh`, reads issue threads and
-issue comments, and uses configured CLI responders such as `codex`,
-`opencode`, or `copilot-cli` to reply when:
+It polls configured GitHub repositories with `gh`, reads issue threads, and
+uses CLI responders such as `codex`, `opencode`, or `copilot-cli` to decide
+when to reply. It supports multi-repo config, responder fallback chains, and
+optional Discord webhook notifications.
 
-- a user explicitly mentions the assistant
-- a new comment changes the thread enough that the responder decides a reply is
-  useful
+## Highlights
 
-It supports multi-repo configuration, responder fallback chains.
-It can also emit non-fatal Discord webhook notifications for issue assistant
-events such as mentions, replies, no-reply decisions, and responder failures.
-
-## Features
-
-- Agent Orchestrator style YAML config with `defaults` and `projects`
-- Multiple repositories in one process
-- Comment-triggered issue assistance
-- Planning / architecture guidance in issue threads
-- Bug verification flows in isolated temporary git worktrees
-- CLI-based responder fallback chain
-- Optional Discord webhook notifications
-- Durable state with `drift` + SQLite
-- BDD-style tests using `package:test` with Given / When / Then wording
+- Poll GitHub issues across multiple repositories
+- Trigger replies from mentions or meaningful thread updates
+- Run planning and bug-verification flows in isolated worktrees
+- Send optional Discord notifications for assistant events
 
 ## Requirements
 
@@ -35,11 +23,9 @@ events such as mentions, replies, no-reply decisions, and responder failures.
 
 ## Config
 
-Create a local `agent-orchestrator.yaml` and follow [`/examples/README.md`](examples/README.md) as a starting point.
-
-Notification config lives under `defaults.issueAssistant.notifications` or
-`projects.<key>.issueAssistant.notifications`. Supported events are
-`mention_detected`, `reply_posted`, `no_reply`, and `responder_failed`.
+Create a local `agent-orchestrator.yaml` and use
+[`examples/README.md`](examples/README.md) plus
+[`examples/simple-github.yaml`](examples/simple-github.yaml) as the reference.
 
 Generate a starter config:
 
@@ -85,13 +71,6 @@ dart run tool/validate_gherkin_test_format.dart
 dart analyze
 dart test
 ```
-
-All Dart tests under `test/` must follow the repo's Gherkin doc-comment format:
-
-- `group(...)` has a `Feature` doc block above it
-- `test(...)` has a `Scenario` doc block above it
-- runtime names stay plain, without `Feature:` or `Scenario:` prefixes
-- test bodies include `Given` / `When` / `Then` inline comments
 
 ## ref
 
