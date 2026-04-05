@@ -12,3 +12,4 @@ agent-orchestrator.yaml
 /skills/*
 !/skills/dart-gherkin-tests
 *.g.dart
+**/*.exe

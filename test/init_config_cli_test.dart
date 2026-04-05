@@ -14,6 +14,29 @@ void main() {
   /// ```
   group('code_work_spawner init-config', () {
     /// ```gherkin
+    /// Scenario: Show init-config in top-level help
+    ///   Given the CLI is executed with the top-level help flag
+    ///   When the process completes successfully
+    ///   Then stdout lists the init-config command in the available commands section
+    /// ```
+    test('Show init-config in top-level help', () async {
+      // Given the CLI is executed with the top-level help flag.
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'run',
+        'bin/code_work_spawner.dart',
+        '--help',
+      ], workingDirectory: Directory.current.path);
+
+      // When the process completes successfully.
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+
+      // Then stdout lists the init-config command in the available commands section.
+      final stdoutText = result.stdout as String;
+      expect(stdoutText, contains('Available commands:'));
+      expect(stdoutText, contains('init-config'));
+    });
+
+    /// ```gherkin
     /// Scenario: Print the starter config to stdout
     ///   Given the CLI is executed with the init-config command
     ///   When the process completes successfully
