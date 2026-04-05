@@ -9,6 +9,7 @@ import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
 import 'github_client.dart';
+import 'notifier.dart';
 import 'workspace_manager.dart';
 
 class IssueAssistantApp {
@@ -21,6 +22,7 @@ class IssueAssistantApp {
     required this.githubClient,
     required this.responderRunner,
     required this.workspaceManager,
+    required this.notifierRegistryFactory,
   });
 
   final AppConfig config;
@@ -28,6 +30,8 @@ class IssueAssistantApp {
   final GitHubClient githubClient;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
+  final NotifierRegistry Function(ProjectConfig project)
+  notifierRegistryFactory;
   final Map<String, _ProjectPollState> _projectPollStates = {};
   final Set<Future<void>> _activePolls = <Future<void>>{};
   Timer? _schedulerTimer;
@@ -47,6 +51,10 @@ class IssueAssistantApp {
       githubClient: GitHubClient(ghCommand: ghCommand),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
+      notifierRegistryFactory: (project) => NotifierRegistry.fromConfigs(
+        project.issueAssistant.notifications,
+        log: _logger.warning,
+      ),
     );
   }
 
@@ -352,6 +360,7 @@ class IssueAssistantApp {
     ProjectConfig project,
     GitHubIssueSummary issue,
   ) async {
+    final notifierRegistry = notifierRegistryFactory(project);
     final thread = await githubClient.fetchThread(
       repo: project.repoSlug,
       issue: issue,
@@ -370,6 +379,20 @@ class IssueAssistantApp {
       'evaluate issue=${project.key}#${issue.number} '
       'comments=${thread.comments.length} trigger=$trigger',
     );
+    final baseNotificationContext = NotificationContext(
+      projectKey: project.key,
+      repo: project.repo,
+      issueNumber: issue.number,
+      issueTitle: thread.issue.title,
+      issueUrl: thread.issue.url,
+      trigger: trigger,
+    );
+    if (trigger == 'mention') {
+      await notifierRegistry.notify(
+        event: NotificationEvent.mentionDetected,
+        context: baseNotificationContext,
+      );
+    }
     final jobId = await database.createJob(
       projectKey: project.key,
       issueNumber: issue.number,
@@ -495,6 +518,19 @@ class IssueAssistantApp {
             'responder=${responder.id} issue=${project.key}#${issue.number} '
             'failed error=$error',
           );
+          await notifierRegistry.notify(
+            event: NotificationEvent.responderFailed,
+            context: NotificationContext(
+              projectKey: project.key,
+              repo: project.repo,
+              issueNumber: issue.number,
+              issueTitle: thread.issue.title,
+              issueUrl: thread.issue.url,
+              trigger: trigger,
+              responderId: responder.id,
+              errorSummary: error.toString(),
+            ),
+          );
           await database.addExecutionRun(
             jobId: jobId,
             responderId: responder.id,
@@ -534,6 +570,21 @@ class IssueAssistantApp {
       );
       await database.updateJobStatus(jobId, JobStatus.completed);
       _log('issue=${project.key}#${issue.number} completed decision=no_reply');
+      await notifierRegistry.notify(
+        event: NotificationEvent.noReply,
+        context: NotificationContext(
+          projectKey: project.key,
+          repo: project.repo,
+          issueNumber: issue.number,
+          issueTitle: thread.issue.title,
+          issueUrl: thread.issue.url,
+          trigger: trigger,
+          mode: selectedResult.mode,
+          responderId: selectedResult.responderId,
+          decision: selectedResult.decision,
+          summary: selectedResult.summary,
+        ),
+      );
       return;
     }
 
@@ -570,6 +621,21 @@ class IssueAssistantApp {
     );
     await database.updateJobStatus(jobId, JobStatus.completed);
     _log('issue=${project.key}#${issue.number} posted_comment_id=${posted.id}');
+    await notifierRegistry.notify(
+      event: NotificationEvent.replyPosted,
+      context: NotificationContext(
+        projectKey: project.key,
+        repo: project.repo,
+        issueNumber: issue.number,
+        issueTitle: thread.issue.title,
+        issueUrl: thread.issue.url,
+        trigger: trigger,
+        mode: selectedResult.mode,
+        responderId: selectedResult.responderId,
+        decision: selectedResult.decision,
+        summary: selectedResult.summary,
+      ),
+    );
   }
 
   String _buildPrompt({

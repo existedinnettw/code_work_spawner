@@ -90,6 +90,7 @@ class IssueAssistantConfigDocument {
     this.prompt,
     this.responders,
     this.capabilities,
+    this.notifications,
     this.commentTag,
     this.commentPrefixTemplate,
     this.commentFooterTemplate,
@@ -102,6 +103,7 @@ class IssueAssistantConfigDocument {
   final String? prompt;
   final List<CliResponderConfigDocument>? responders;
   final List<AssistantCapability>? capabilities;
+  final List<NotificationConfigDocument>? notifications;
   final String? commentTag;
   final String? commentPrefixTemplate;
   final String? commentFooterTemplate;
@@ -142,5 +144,45 @@ class CliResponderConfigDocument {
   Map<String, dynamic> toJson() => _$CliResponderConfigDocumentToJson(this);
 }
 
+@JsonSerializable(
+  checked: true,
+  createToJson: true,
+  disallowUnrecognizedKeys: true,
+  explicitToJson: true,
+  includeIfNull: false,
+)
+class NotificationConfigDocument {
+  const NotificationConfigDocument({
+    this.type,
+    this.enabled,
+    this.events,
+    this.webhookUrl,
+    this.username,
+    this.avatarUrl,
+  });
+
+  final NotificationType? type;
+  final bool? enabled;
+  final List<NotificationEvent>? events;
+  final String? webhookUrl;
+  final String? username;
+  final String? avatarUrl;
+
+  factory NotificationConfigDocument.fromJson(Map<String, dynamic> json) =>
+      _$NotificationConfigDocumentFromJson(json);
+
+  Map<String, dynamic> toJson() => _$NotificationConfigDocumentToJson(this);
+}
+
 @JsonEnum(fieldRename: FieldRename.snake)
 enum AssistantCapability { planning, bugVerification }
+
+enum NotificationType { discordWebhook }
+
+@JsonEnum(fieldRename: FieldRename.snake)
+enum NotificationEvent {
+  mentionDetected,
+  replyPosted,
+  noReply,
+  responderFailed,
+}

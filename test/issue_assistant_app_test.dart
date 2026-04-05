@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
@@ -776,6 +778,134 @@ projects:
         2,
       );
     });
+
+    /// ```gherkin
+    /// Scenario: Send Discord webhook notifications for mention and reply events
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing an explicit assistant mention
+    ///   And a responder that emits a planning reply
+    ///   And a local webhook server that records notification requests
+    ///   And an orchestrator-style config with a discord webhook notifier
+    ///   When the app processes one polling cycle
+    ///   Then the webhook server receives one mention_detected notification
+    ///   And the webhook server receives one reply_posted notification
+    /// ```
+    test(
+      'Send Discord webhook notifications for mention and reply events',
+      () async {
+        // Given a temporary project checkout that can be used as the local repo path.
+        final sandbox = await Directory.systemTemp.createTemp(
+          'cws-discord-notify-',
+        );
+        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+        await initGitRepo(repoDir);
+
+        // And GitHub issue data containing an explicit assistant mention.
+        final ghScript = File(p.join(sandbox.path, 'gh'));
+        final issueData = [
+          {
+            'number': 61,
+            'title': 'Need architecture help',
+            'body': 'Please review the notifier design.',
+            'state': 'open',
+            'html_url': 'https://example.test/issues/61',
+            'updated_at': '2026-04-04T17:10:00Z',
+            'user': {'login': 'reporter'},
+            'labels': const [],
+          },
+        ];
+        final commentsData = [
+          {
+            'id': 610,
+            'body': '@helper please review the notifier design',
+            'html_url': 'https://example.test/issues/61#issuecomment-610',
+            'created_at': '2026-04-04T17:10:00Z',
+            'updated_at': '2026-04-04T17:10:00Z',
+            'user': {'login': 'reporter'},
+          },
+        ];
+        await writeFakeGhScript(
+          ghScript: ghScript,
+          issueListResponse: issueData,
+          commentResponses: {61: commentsData},
+          postCommentIssueNumber: 61,
+        );
+
+        // And a responder that emits a planning reply.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await writeResponderScript(responderScript, {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown': 'discord notification reply',
+          'summary': 'posted planning advice',
+        });
+
+        // And a local webhook server that records notification requests.
+        final requests = <Map<String, dynamic>>[];
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        unawaited(() async {
+          await for (final request in server) {
+            final body = await utf8.decoder.bind(request).join();
+            requests.add(jsonDecode(body) as Map<String, dynamic>);
+            request.response.statusCode = HttpStatus.noContent;
+            await request.response.close();
+          }
+        }());
+
+        // And an orchestrator-style config with a discord webhook notifier.
+        final configFile = File(
+          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+    notifications:
+      - type: discordWebhook
+        enabled: true
+        events: ["mention_detected", "reply_posted"]
+        webhookUrl: http://${server.address.host}:${server.port}/discord
+        username: code-work-spawner
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          ghCommand: ghScript.path,
+        );
+
+        // When the app processes one polling cycle.
+        await app.runOnce();
+        await app.close();
+        await server.close(force: true);
+
+        // Then the webhook server receives one mention_detected notification.
+        expect(requests, hasLength(2));
+        expect(requests.first['username'], 'code-work-spawner');
+        expect(
+          requests.first['content'] as String,
+          contains('**Mention detected**'),
+        );
+
+        // And the webhook server receives one reply_posted notification.
+        expect(
+          requests.last['content'] as String,
+          contains('**Reply posted**'),
+        );
+        expect(
+          requests.last['content'] as String,
+          contains('summary: posted planning advice'),
+        );
+      },
+    );
 
     /// ```gherkin
     /// Scenario: Process multiple issues concurrently up to the configured limit

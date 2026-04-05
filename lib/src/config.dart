@@ -7,7 +7,12 @@ import 'package:yaml/yaml.dart';
 
 import 'comment_templates.dart';
 import 'config_schema.dart';
-export 'config_schema.dart' show AssistantCapability;
+export 'config_schema.dart'
+    show
+        AssistantCapability,
+        NotificationConfigDocument,
+        NotificationEvent,
+        NotificationType;
 
 const String defaultIssueAssistantPrompt = '''
 You are a GitHub issue thread assistant.
@@ -212,6 +217,7 @@ class IssueAssistantConfig {
     required this.prompt,
     required this.responders,
     required this.capabilities,
+    required this.notifications,
     required this.commentTag,
     required this.commentPrefixTemplate,
     required this.commentFooterTemplate,
@@ -224,6 +230,7 @@ class IssueAssistantConfig {
   final String prompt;
   final List<CliResponderConfig> responders;
   final Set<AssistantCapability> capabilities;
+  final List<NotificationConfig> notifications;
   final String commentTag;
   final String commentPrefixTemplate;
   final String commentFooterTemplate;
@@ -288,6 +295,43 @@ class CliResponderConfig {
   }
 }
 
+class NotificationConfig {
+  NotificationConfig({
+    required this.type,
+    required this.enabled,
+    required this.events,
+    required this.webhookUrl,
+    required this.username,
+    required this.avatarUrl,
+  });
+
+  final NotificationType type;
+  final bool enabled;
+  final Set<NotificationEvent> events;
+  final String? webhookUrl;
+  final String? username;
+  final String? avatarUrl;
+
+  factory NotificationConfig.fromDocument(NotificationConfigDocument document) {
+    final type = document.type;
+    if (type == null) {
+      throw const FormatException('Notification type is required.');
+    }
+
+    return NotificationConfig(
+      type: type,
+      enabled: document.enabled ?? true,
+      events:
+          (document.events ??
+                  const <NotificationEvent>[NotificationEvent.replyPosted])
+              .toSet(),
+      webhookUrl: _expandOptionalEnvironmentString(document.webhookUrl),
+      username: _expandOptionalEnvironmentString(document.username),
+      avatarUrl: _expandOptionalEnvironmentString(document.avatarUrl),
+    );
+  }
+}
+
 class _IssueAssistantConfigResolver {
   const _IssueAssistantConfigResolver();
 
@@ -296,6 +340,7 @@ class _IssueAssistantConfigResolver {
     required IssueAssistantConfigDocument? overlay,
   }) {
     final responders = overlay?.responders;
+    final notifications = overlay?.notifications;
     return IssueAssistantConfig(
       enabled: overlay?.enabled ?? base?.enabled ?? true,
       pollInterval: overlay?.pollInterval != null
@@ -321,6 +366,11 @@ class _IssueAssistantConfigResolver {
                   AssistantCapability.planning,
                   AssistantCapability.bugVerification,
                 },
+      notifications: notifications != null
+          ? notifications
+                .map(NotificationConfig.fromDocument)
+                .toList(growable: false)
+          : base?.notifications ?? const <NotificationConfig>[],
       commentTag:
           overlay?.commentTag ?? base?.commentTag ?? 'code-work-spawner',
       commentPrefixTemplate:
@@ -419,6 +469,17 @@ String? _expandOptionalPath(String? path) {
   return _expandHome(path);
 }
 
+String? _expandOptionalEnvironmentString(String? value) {
+  if (value == null || value.isEmpty) {
+    return value;
+  }
+  return value.replaceAllMapped(RegExp(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}'), (
+    match,
+  ) {
+    return Platform.environment[match.group(1)!] ?? '';
+  });
+}
+
 void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
   _assertCamelCaseMap(root, scope: '');
 
@@ -434,6 +495,17 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
             _assertCamelCaseMap(
               responder,
               scope: 'defaults.issueAssistant.responders',
+            );
+          }
+        }
+      }
+      final notifications = issueAssistant['notifications'];
+      if (notifications is List) {
+        for (final notification in notifications) {
+          if (notification is Map<String, dynamic>) {
+            _assertCamelCaseMap(
+              notification,
+              scope: 'defaults.issueAssistant.notifications',
             );
           }
         }
@@ -462,6 +534,17 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
               _assertCamelCaseMap(
                 responder,
                 scope: 'projects.${entry.key}.issueAssistant.responders',
+              );
+            }
+          }
+        }
+        final notifications = issueAssistant['notifications'];
+        if (notifications is List) {
+          for (final notification in notifications) {
+            if (notification is Map<String, dynamic>) {
+              _assertCamelCaseMap(
+                notification,
+                scope: 'projects.${entry.key}.issueAssistant.notifications',
               );
             }
           }
@@ -535,6 +618,12 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     #   - id: opencode
     #     command: opencode
     #     timeout: 10m
+    # notifications:
+    #   - type: discordWebhook
+    #     enabled: true
+    #     events: ["reply_posted", "responder_failed"]
+    #     webhookUrl: \${CWS_DISCORD_WEBHOOK}
+    #     username: code-work-spawner
 
 ${_YamlEmitter().write({'projects': projectsSection})}
 
