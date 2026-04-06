@@ -53,6 +53,7 @@ projects:
 
       // Then the project keeps inherited defaults that were not overridden.
       expect(config.projects['sample'], isNotNull);
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
       expect(config.projects['sample']!.repoSlug.owner, 'owner');
       expect(config.projects['sample']!.repoSlug.name, 'sample');
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
@@ -323,6 +324,35 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load an explicit Gitea project provider
+    ///   Given a config whose project sets provider to gitea
+    ///   When loading the app config from disk
+    ///   Then the project keeps the configured Gitea provider
+    ///   And the repository slug still parses normally
+    /// ```
+    test('Load an explicit Gitea project provider', () async {
+      // Given a config whose project sets provider to gitea.
+      final tempDir = await Directory.systemTemp.createTemp('cws-gitea-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: gitea
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the configured Gitea provider.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
+
+      // And the repository slug still parses normally.
+      expect(config.projects['sample']!.repoSlug.fullName, 'owner/sample');
+    });
+
+    /// ```gherkin
     /// Scenario: Reject snake_case config keys
     ///   Given a config that still uses snake_case keys
     ///   When loading the app config from disk
@@ -418,6 +448,7 @@ projects:
         config.dataDir,
         p.join(Platform.environment['HOME']!, '.agent-orchestrator'),
       );
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
       expect(
         config.worktreeDir,
         p.join(Platform.environment['HOME']!, '.worktrees'),
