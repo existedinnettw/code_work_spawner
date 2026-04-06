@@ -177,9 +177,11 @@ class IssueAssistantApp {
           'poll tick source=$source projects=${projects.map((p) => p.key).join(",")} '
           'duration_ms=${stopwatch.elapsedMilliseconds} error=$error',
         );
-        _cancelScheduler();
-        if (!(_runCompleter?.isCompleted ?? true)) {
-          _runCompleter!.completeError(error, stackTrace);
+        if (_runCompleter != null) {
+          _logError(
+            'poll tick source=$source will_retry=true '
+            'next_run=scheduled stack_trace=$stackTrace',
+          );
         }
       } finally {
         for (final state in dueStates) {
