@@ -1,0 +1,24 @@
+# Minimal setup for a single Gitea repo with Gitea Issues.
+# Replies require at least one configured responder.
+
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 30s
+    maxConcurrentIssues: 3
+    mentionTriggers: ["@codex", "@helper"]
+    responders:
+      - id: codex
+        command: codex
+        args: ["exec", "--json"]
+        timeout: 10m
+
+projects:
+  sample-gitea:
+    provider: gitea
+    repo: owner/repo
+    path: ~/repo
+    defaultBranch: main

@@ -1454,5 +1454,130 @@ projects:
         );
       },
     );
+
+    /// ```gherkin
+    /// Scenario: Reply through Gitea when a user explicitly mentions the assistant
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And Gitea issue data containing a comment with an explicit assistant mention
+    ///   And a responder that emits a planning reply
+    ///   And an orchestrator-style config that marks the project provider as gitea
+    ///   When the app processes one polling cycle
+    ///   Then it reads issue comments and posts exactly one reply through tea for that issue
+    /// ```
+    test('Reply through Gitea when a user explicitly mentions the assistant', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp('cws-gitea-run-');
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And Gitea issue data containing a comment with an explicit assistant mention.
+      final teaScript = File(p.join(sandbox.path, 'tea'));
+      final teaLog = File(p.join(sandbox.path, 'tea-log.jsonl'));
+      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
+      await writeFakeTeaScript(
+        teaScript: teaScript,
+        issueListResponsesByRepo: {
+          'owner/sample': [
+            {
+              'index': 12,
+              'title': 'Need architecture help',
+              'body': 'Please review the API layering.',
+              'state': 'open',
+              'url': 'https://gitea.example.test/owner/sample/issues/12',
+              'updated_at': '2026-04-04T12:00:00Z',
+              'poster': {'login': 'reporter'},
+              'labels': [
+                {'name': 'help'},
+              ],
+            },
+          ],
+        },
+        commentResponsesByRepo: {
+          'owner/sample': {
+            12: [
+              {
+                'id': 50,
+                'body': '@helper can you plan the architecture?',
+                'url':
+                    'https://gitea.example.test/owner/sample/issues/12#issuecomment-50',
+                'created_at': '2026-04-04T12:00:00Z',
+                'updated_at': '2026-04-04T12:00:00Z',
+                'poster': {'login': 'reporter'},
+              },
+            ],
+          },
+        },
+        postCommentIssueNumbersByRepo: {
+          'owner/sample': {12},
+        },
+        teaLog: teaLog,
+        postedBodyFile: postedBody,
+        viewerLogin: 'tea-octocat',
+      );
+
+      // And a responder that emits a planning reply.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'Plan:\n- keep provider-specific commands isolated',
+        'summary': 'posted planning advice',
+      });
+
+      // And an orchestrator-style config that marks the project provider as gitea.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+        timeout: 1m
+projects:
+  sample:
+    provider: gitea
+    repo: owner/sample
+    path: ${repoDir.path}
+    defaultBranch: main
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        teaCommand: teaScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      await app.close();
+
+      // Then it reads issue comments and posts exactly one reply through tea for that issue.
+      final logLines = await teaLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues?state=open'),
+            )
+            .length,
+        1,
+      );
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/12/comments'),
+            )
+            .length,
+        2,
+      );
+      final postedComment = await postedBody.readAsString();
+      expect(postedComment, contains('via `tea`'));
+      expect(postedComment, contains('@tea-octocat'));
+      expect(
+        postedComment,
+        contains('Plan:\n- keep provider-specific commands isolated'),
+      );
+    });
   });
 }

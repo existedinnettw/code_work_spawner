@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
 import 'cli_responder.dart';
@@ -19,7 +20,7 @@ class IssueAssistantApp {
   IssueAssistantApp._({
     required this.config,
     required this.database,
-    required this.githubClient,
+    required this.issueTrackerClient,
     required this.responderRunner,
     required this.workspaceManager,
     required this.notifierRegistryFactory,
@@ -27,7 +28,7 @@ class IssueAssistantApp {
 
   final AppConfig config;
   final AppDatabase database;
-  final GitHubClient githubClient;
+  final GitHubClient issueTrackerClient;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
   final NotifierRegistry Function(ProjectConfig project)
@@ -43,12 +44,16 @@ class IssueAssistantApp {
     required AppConfig config,
     required String databasePath,
     String ghCommand = 'gh',
+    String teaCommand = 'tea',
   }) async {
     final database = AppDatabase.open(databasePath);
     return IssueAssistantApp._(
       config: config,
       database: database,
-      githubClient: GitHubClient(ghCommand: ghCommand),
+      issueTrackerClient: GitHubClient(
+        ghCommand: ghCommand,
+        teaCommand: teaCommand,
+      ),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
       notifierRegistryFactory: (project) => NotifierRegistry.fromConfigs(
@@ -231,7 +236,7 @@ class IssueAssistantApp {
   Future<void> _pollProjects(List<ProjectConfig> projects) async {
     final pollRunIds = <String, int>{};
     final projectsByRepo = <String, ProjectConfig>{
-      for (final project in projects) project.repoSlug.fullName: project,
+      for (final project in projects) _projectRepoKey(project): project,
     };
     final sinceByProject = <String, DateTime?>{};
     final latestSeenByProject = <String, DateTime?>{};
@@ -262,26 +267,37 @@ class IssueAssistantApp {
             }
             return current;
           });
-      final issues = await githubClient.fetchUpdatedIssuesForRepos(
-        repos: projects.map((project) => project.repoSlug),
-        since: batchSince,
-      );
       final issuesByProject = <String, List<GitHubIssueSummary>>{
         for (final project in projects) project.key: <GitHubIssueSummary>[],
       };
-      for (final issue in issues) {
-        final project = projectsByRepo[issue.repoSlug.fullName];
-        if (project == null) {
+      for (final provider in IssueTrackerProvider.values) {
+        final providerProjects = projects
+            .where((project) => project.provider == provider)
+            .toList(growable: false);
+        if (providerProjects.isEmpty) {
           continue;
         }
-        final since = sinceByProject[project.key];
-        if (since != null && !issue.updatedAt.isAfter(since)) {
-          continue;
-        }
-        issuesByProject[project.key]!.add(issue);
-        final latestSeen = latestSeenByProject[project.key];
-        if (latestSeen == null || issue.updatedAt.isAfter(latestSeen)) {
-          latestSeenByProject[project.key] = issue.updatedAt;
+
+        final issues = await issueTrackerClient.fetchUpdatedIssuesForRepos(
+          provider: provider,
+          repos: providerProjects.map((project) => project.repoSlug),
+          since: batchSince,
+        );
+        for (final issue in issues) {
+          final project =
+              projectsByRepo[_providerRepoKey(provider, issue.repoSlug)];
+          if (project == null) {
+            continue;
+          }
+          final since = sinceByProject[project.key];
+          if (since != null && !issue.updatedAt.isAfter(since)) {
+            continue;
+          }
+          issuesByProject[project.key]!.add(issue);
+          final latestSeen = latestSeenByProject[project.key];
+          if (latestSeen == null || issue.updatedAt.isAfter(latestSeen)) {
+            latestSeenByProject[project.key] = issue.updatedAt;
+          }
         }
       }
 
@@ -361,7 +377,8 @@ class IssueAssistantApp {
     GitHubIssueSummary issue,
   ) async {
     final notifierRegistry = notifierRegistryFactory(project);
-    final thread = await githubClient.fetchThread(
+    final thread = await issueTrackerClient.fetchThread(
+      provider: project.provider,
       repo: project.repoSlug,
       issue: issue,
     );
@@ -595,7 +612,8 @@ class IssueAssistantApp {
       fingerprint: fingerprint,
       markdown: selectedResult.markdown,
     );
-    final posted = await githubClient.createIssueComment(
+    final posted = await issueTrackerClient.createIssueComment(
+      provider: project.provider,
       repo: project.repoSlug,
       issueNumber: issue.number,
       body: commentBody,
@@ -645,6 +663,7 @@ class IssueAssistantApp {
   }) {
     final payload = <String, String>{
       'repo': project.repo,
+      'tracker_provider': project.provider.name,
       'project_key': project.key,
       'project_path': project.path,
       'issue_number': thread.issue.number.toString(),
@@ -709,9 +728,13 @@ class IssueAssistantApp {
     required String fingerprint,
     required String markdown,
   }) async {
-    var ghLogin = 'unknown';
+    var trackerLogin = 'unknown';
     try {
-      ghLogin = await githubClient.getAuthenticatedLogin() ?? 'unknown';
+      trackerLogin =
+          await issueTrackerClient.getAuthenticatedLogin(
+            provider: project.provider,
+          ) ??
+          'unknown';
     } catch (error) {
       _log(
         'comment_identity_lookup_failed project=${project.key} '
@@ -719,6 +742,7 @@ class IssueAssistantApp {
       );
     }
 
+    final trackerCli = issueTrackerClient.trackerCliName(project.provider);
     final templateValues = <String, String>{
       'repo': project.repo,
       'project_key': project.key,
@@ -726,7 +750,9 @@ class IssueAssistantApp {
       'trigger': trigger,
       'comment_tag': project.issueAssistant.commentTag,
       'fingerprint': fingerprint,
-      'gh_login': ghLogin,
+      'tracker_cli': trackerCli,
+      'tracker_login': trackerLogin,
+      'gh_login': trackerLogin,
     };
     final prefix = renderTemplate(
       project.issueAssistant.commentPrefixTemplate,
@@ -766,6 +792,17 @@ class IssueAssistantApp {
     if (stderr.isNotEmpty) {
       _log('responder=$responderId issue=$issueKey stream=stderr\n$stderr');
     }
+  }
+
+  String _projectRepoKey(ProjectConfig project) {
+    return _providerRepoKey(project.provider, project.repoSlug);
+  }
+
+  String _providerRepoKey(
+    IssueTrackerProvider provider,
+    RepositorySlug repoSlug,
+  ) {
+    return '${provider.name}:${repoSlug.fullName}';
   }
 }
 

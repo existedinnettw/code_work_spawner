@@ -21,7 +21,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
   _CodeWorkSpawnerCommandRunner()
     : super(
         'code_work_spawner',
-        'GitHub issue thread assistant with an Agent Orchestrator style YAML config.',
+        'Repository issue thread assistant with an Agent Orchestrator style YAML config.',
       ) {
     argParser
       ..addFlag(
@@ -45,6 +45,11 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
         'gh-command',
         help: 'Path to the gh executable.',
         defaultsTo: 'gh',
+      )
+      ..addOption(
+        'tea-command',
+        help: 'Path to the tea executable.',
+        defaultsTo: 'tea',
       );
 
     addCommand(_InitConfigCommand());
@@ -83,6 +88,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       config: config,
       databasePath: topLevelResults['db'] as String,
       ghCommand: topLevelResults['gh-command'] as String,
+      teaCommand: topLevelResults['tea-command'] as String,
     );
 
     try {

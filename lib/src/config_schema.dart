@@ -55,6 +55,7 @@ class AppConfigDefaultsDocument {
 )
 class ProjectConfigDocument {
   const ProjectConfigDocument({
+    this.provider,
     this.repo,
     this.path,
     this.defaultBranch,
@@ -62,6 +63,7 @@ class ProjectConfigDocument {
     this.issueAssistant,
   });
 
+  final IssueTrackerProvider? provider;
   final String? repo;
   final String? path;
   final String? defaultBranch;
@@ -176,6 +178,9 @@ class NotificationConfigDocument {
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum AssistantCapability { planning, bugVerification }
+
+@JsonEnum(fieldRename: FieldRename.snake)
+enum IssueTrackerProvider { github, gitea }
 
 enum NotificationType { discordWebhook, desktop }
 

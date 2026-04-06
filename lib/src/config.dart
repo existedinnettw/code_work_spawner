@@ -10,12 +10,13 @@ import 'config_schema.dart';
 export 'config_schema.dart'
     show
         AssistantCapability,
+        IssueTrackerProvider,
         NotificationConfigDocument,
         NotificationEvent,
         NotificationType;
 
 const String defaultIssueAssistantPrompt = '''
-You are a GitHub issue thread assistant.
+You are a repository issue thread assistant.
 
 Decide whether to reply. Rules:
 - If the latest trigger explicitly mentions the assistant, always return "reply".
@@ -35,6 +36,7 @@ JSON schema:
 
 Repository metadata:
 - repo: {{repo}}
+- tracker_provider: {{tracker_provider}}
 - project_key: {{project_key}}
 - project_path: {{project_path}}
 - issue_number: {{issue_number}}
@@ -137,6 +139,7 @@ class AppConfig {
       ),
       projects: {
         'sample': ProjectConfigDocument(
+          provider: IssueTrackerProvider.github,
           repo: 'owner/repo',
           path: '~/path/to/repo',
           defaultBranch: 'main',
@@ -149,6 +152,7 @@ class AppConfig {
 class ProjectConfig {
   ProjectConfig({
     required this.key,
+    required this.provider,
     required this.repo,
     required this.repoSlug,
     required this.path,
@@ -158,6 +162,7 @@ class ProjectConfig {
   });
 
   final String key;
+  final IssueTrackerProvider provider;
   final String repo;
   final RepositorySlug repoSlug;
   final String path;
@@ -185,6 +190,7 @@ class ProjectConfig {
 
     return ProjectConfig(
       key: key,
+      provider: document.provider ?? IssueTrackerProvider.github,
       repo: repo,
       repoSlug: _parseRepositorySlug(repo, field: 'projects.$key.repo'),
       path: _expandHome(path),

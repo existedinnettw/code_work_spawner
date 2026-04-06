@@ -1,15 +1,16 @@
 # code_work_spawner
 
-GitHub issue thread assistant with an Agent Orchestrator style YAML config.
+Repository issue thread assistant with an Agent Orchestrator style YAML config.
 
-It polls configured GitHub repositories with `gh`, reads issue threads, and
-uses CLI responders such as `codex`, `opencode`, or `copilot-cli` to decide
-when to reply. It supports multi-repo config, responder fallback chains, and
-optional Discord webhook and desktop notifications.
+It polls configured GitHub or Gitea repositories with `gh` or `tea`, reads
+issue threads, and uses CLI responders such as `codex`, `opencode`, or
+`copilot-cli` to decide when to reply. It supports multi-repo config,
+responder fallback chains, and optional Discord webhook and desktop
+notifications.
 
 ## Highlights
 
-- Poll GitHub issues across multiple repositories
+- Poll GitHub and Gitea issues across multiple repositories
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
 - Send optional Discord or desktop notifications for assistant events
@@ -17,7 +18,7 @@ optional Discord webhook and desktop notifications.
 ## Requirements
 
 - Dart SDK
-- `gh` CLI authenticated for the target repositories
+- `gh` and/or `tea` CLI authenticated for the target repositories
 - Local checkouts for configured repositories
 - Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
 
@@ -55,13 +56,14 @@ Long-running poller:
 dart run bin/code_work_spawner.dart
 ```
 
-Override paths when needed:
+Override tracker CLI paths when needed:
 
 ```bash
 dart run bin/code_work_spawner.dart \
   --config /path/to/agent-orchestrator.yaml \
   --db /path/to/state.sqlite3 \
-  --gh-command /usr/bin/gh
+  --gh-command /usr/bin/gh \
+  --tea-command /usr/bin/tea
 ```
 
 ## Testing

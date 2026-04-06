@@ -3,14 +3,125 @@ import 'dart:io';
 
 import 'package:github/github.dart';
 
+import 'config_schema.dart';
+
 class GitHubClient {
-  GitHubClient({this.ghCommand = 'gh'});
+  GitHubClient({this.ghCommand = 'gh', this.teaCommand = 'tea'});
 
   final String ghCommand;
-  Future<String?>? _authenticatedLoginFuture;
+  final String teaCommand;
+  final Map<IssueTrackerProvider, Future<String?>> _authenticatedLoginFutures =
+      <IssueTrackerProvider, Future<String?>>{};
   static const int _pageSize = 100;
 
   Future<List<GitHubIssueSummary>> fetchUpdatedIssuesForRepos({
+    required IssueTrackerProvider provider,
+    required Iterable<RepositorySlug> repos,
+    required DateTime? since,
+  }) {
+    return switch (provider) {
+      IssueTrackerProvider.github => _fetchUpdatedGitHubIssues(
+        repos: repos,
+        since: since,
+      ),
+      IssueTrackerProvider.gitea => _fetchUpdatedGiteaIssues(
+        repos: repos,
+        since: since,
+      ),
+    };
+  }
+
+  Future<IssueThread> fetchThread({
+    required IssueTrackerProvider provider,
+    required RepositorySlug repo,
+    required GitHubIssueSummary issue,
+  }) async {
+    final comments = switch (provider) {
+      IssueTrackerProvider.github => await _runGhJson([
+        'api',
+        '-X',
+        'GET',
+        _buildApiPath(
+          repo,
+          ['issues', '${issue.number}', 'comments'],
+          {'per_page': '100'},
+        ),
+      ]),
+      IssueTrackerProvider.gitea => await _runTeaJson([
+        'api',
+        '-X',
+        'GET',
+        _buildApiPath(
+          repo,
+          ['issues', '${issue.number}', 'comments'],
+          {'limit': '100'},
+        ),
+        '-r',
+        repo.fullName,
+      ]),
+    };
+
+    return IssueThread(
+      issue: issue,
+      comments: (comments as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .map(GitHubIssueComment.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  Future<PostedComment> createIssueComment({
+    required IssueTrackerProvider provider,
+    required RepositorySlug repo,
+    required int issueNumber,
+    required String body,
+  }) async {
+    final json = switch (provider) {
+      IssueTrackerProvider.github => await _runGhJson([
+        'api',
+        '-X',
+        'POST',
+        _buildApiPath(repo, ['issues', '$issueNumber', 'comments']),
+        '-f',
+        'body=$body',
+      ]),
+      IssueTrackerProvider.gitea => await _runTeaJson([
+        'api',
+        '-X',
+        'POST',
+        _buildApiPath(repo, ['issues', '$issueNumber', 'comments']),
+        '-f',
+        'body=$body',
+        '-r',
+        repo.fullName,
+      ]),
+    };
+
+    final map = json as Map<String, dynamic>;
+    return PostedComment(
+      id: _readInt(map, 'id'),
+      url: _readUrl(map),
+      body: map['body'] as String? ?? body,
+    );
+  }
+
+  Future<String?> getAuthenticatedLogin({
+    required IssueTrackerProvider provider,
+  }) {
+    return _authenticatedLoginFutures.putIfAbsent(
+      provider,
+      () => _loadAuthenticatedLogin(provider: provider),
+    );
+  }
+
+  String trackerCliName(IssueTrackerProvider provider) {
+    return switch (provider) {
+      IssueTrackerProvider.github => 'gh',
+      IssueTrackerProvider.gitea => 'tea',
+    };
+  }
+
+  Future<List<GitHubIssueSummary>> _fetchUpdatedGitHubIssues({
     required Iterable<RepositorySlug> repos,
     required DateTime? since,
   }) async {
@@ -28,7 +139,7 @@ class GitHubClient {
 
     final issues = <GitHubIssueSummary>[];
     for (var page = 1; true; page += 1) {
-      final json = await _runJson([
+      final json = await _runGhJson([
         'api',
         '-X',
         'GET',
@@ -61,58 +172,52 @@ class GitHubClient {
     return issues;
   }
 
-  Future<IssueThread> fetchThread({
-    required RepositorySlug repo,
-    required GitHubIssueSummary issue,
+  Future<List<GitHubIssueSummary>> _fetchUpdatedGiteaIssues({
+    required Iterable<RepositorySlug> repos,
+    required DateTime? since,
   }) async {
-    final comments = await _runJson([
-      'api',
-      '-X',
-      'GET',
-      _buildApiPath(
-        repo,
-        ['issues', '${issue.number}', 'comments'],
-        {'per_page': '100'},
-      ),
-    ]);
+    final issues = <GitHubIssueSummary>[];
 
-    return IssueThread(
-      issue: issue,
-      comments: (comments as List<dynamic>)
-          .cast<Map<String, dynamic>>()
-          .map(GitHubIssueComment.fromJson)
-          .toList(growable: false),
-    );
+    for (final repo in repos) {
+      for (var page = 1; true; page += 1) {
+        final query = <String, String>{
+          'state': 'open',
+          'limit': '$_pageSize',
+          'page': '$page',
+          if (since != null) 'since': since.toUtc().toIso8601String(),
+        };
+        final json = await _runTeaJson([
+          'api',
+          '-X',
+          'GET',
+          _buildApiPath(repo, ['issues'], query),
+          '-r',
+          repo.fullName,
+        ]);
+        final items = (json as List<dynamic>? ?? const [])
+            .cast<Map<String, dynamic>>();
+        issues.addAll(
+          items
+              .where((item) => item['pull_request'] == null)
+              .map((item) => GitHubIssueSummary.fromRepositoryJson(repo, item)),
+        );
+        if (items.length < _pageSize) {
+          break;
+        }
+      }
+    }
+
+    issues.sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
+    return issues;
   }
 
-  Future<PostedComment> createIssueComment({
-    required RepositorySlug repo,
-    required int issueNumber,
-    required String body,
+  Future<String?> _loadAuthenticatedLogin({
+    required IssueTrackerProvider provider,
   }) async {
-    final json = await _runJson([
-      'api',
-      '-X',
-      'POST',
-      _buildApiPath(repo, ['issues', '$issueNumber', 'comments']),
-      '-f',
-      'body=$body',
-    ]);
-
-    final map = json as Map<String, dynamic>;
-    return PostedComment(
-      id: map['id'] as int,
-      url: map['html_url'] as String? ?? '',
-      body: map['body'] as String? ?? body,
-    );
-  }
-
-  Future<String?> getAuthenticatedLogin() {
-    return _authenticatedLoginFuture ??= _loadAuthenticatedLogin();
-  }
-
-  Future<String?> _loadAuthenticatedLogin() async {
-    final json = await _runJson(['api', 'user']);
+    final json = switch (provider) {
+      IssueTrackerProvider.github => await _runGhJson(['api', 'user']),
+      IssueTrackerProvider.gitea => await _runTeaJson(['api', 'user']),
+    };
     if (json is! Map<String, dynamic>) {
       return null;
     }
@@ -123,11 +228,19 @@ class GitHubClient {
     return login;
   }
 
-  Future<Object?> _runJson(List<String> arguments) async {
-    final result = await Process.run(ghCommand, arguments);
+  Future<Object?> _runGhJson(List<String> arguments) {
+    return _runJson(ghCommand, arguments);
+  }
+
+  Future<Object?> _runTeaJson(List<String> arguments) {
+    return _runJson(teaCommand, arguments);
+  }
+
+  Future<Object?> _runJson(String command, List<String> arguments) async {
+    final result = await Process.run(command, arguments);
     if (result.exitCode != 0) {
       throw ProcessException(
-        ghCommand,
+        command,
         arguments,
         '${result.stdout}\n${result.stderr}',
         result.exitCode,
@@ -183,18 +296,15 @@ class GitHubIssueSummary {
     final labelsNode = json['labels'] as List<dynamic>? ?? const [];
     return GitHubIssueSummary(
       repoSlug: repo,
-      number: json['number'] as int,
+      number: _readInt(json, 'number', fallbackKey: 'index'),
       title: json['title'] as String? ?? '',
       body: json['body'] as String? ?? '',
       state: json['state'] as String? ?? 'open',
-      url: json['html_url'] as String? ?? '',
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      userLogin:
-          (json['user'] as Map<String, dynamic>? ?? const {})['login']
-              as String? ??
-          'unknown',
+      url: _readUrl(json),
+      updatedAt: DateTime.parse(_readString(json, 'updated_at')),
+      userLogin: _readLogin(json['user']) ?? _readLogin(json['poster']) ?? '',
       labels: labelsNode
-          .map((label) => (label as Map<String, dynamic>)['name'].toString())
+          .map((label) => _readString(label as Map<String, dynamic>, 'name'))
           .toList(growable: false),
     );
   }
@@ -225,23 +335,7 @@ class GitHubIssueSummary {
   }
 
   factory GitHubIssueSummary.fromJson(Map<String, dynamic> json) {
-    final labelsNode = json['labels'] as List<dynamic>? ?? const [];
-    return GitHubIssueSummary(
-      repoSlug: RepositorySlug('', ''),
-      number: json['number'] as int,
-      title: json['title'] as String? ?? '',
-      body: json['body'] as String? ?? '',
-      state: json['state'] as String? ?? 'open',
-      url: json['html_url'] as String? ?? '',
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      userLogin:
-          (json['user'] as Map<String, dynamic>? ?? const {})['login']
-              as String? ??
-          'unknown',
-      labels: labelsNode
-          .map((label) => (label as Map<String, dynamic>)['name'].toString())
-          .toList(growable: false),
-    );
+    return GitHubIssueSummary.fromRepositoryJson(RepositorySlug('', ''), json);
   }
 
   Map<String, Object?> toJson() => {
@@ -276,15 +370,12 @@ class GitHubIssueComment {
 
   factory GitHubIssueComment.fromJson(Map<String, dynamic> json) {
     return GitHubIssueComment(
-      id: json['id'] as int,
+      id: _readInt(json, 'id'),
       body: json['body'] as String? ?? '',
-      userLogin:
-          (json['user'] as Map<String, dynamic>? ?? const {})['login']
-              as String? ??
-          'unknown',
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      url: json['html_url'] as String? ?? '',
+      userLogin: _readLogin(json['user']) ?? _readLogin(json['poster']) ?? '',
+      createdAt: DateTime.parse(_readString(json, 'created_at')),
+      updatedAt: DateTime.parse(_readString(json, 'updated_at')),
+      url: _readUrl(json),
     );
   }
 
@@ -321,4 +412,56 @@ class PostedComment {
   final int id;
   final String url;
   final String body;
+}
+
+int _readInt(Map<String, dynamic> json, String key, {String? fallbackKey}) {
+  final value = json[key] ?? (fallbackKey == null ? null : json[fallbackKey]);
+  if (value is int) {
+    return value;
+  }
+  if (value is String) {
+    return int.parse(value);
+  }
+  throw FormatException(
+    'Missing integer field "$key"${fallbackKey == null ? '' : ' or "$fallbackKey"'} in tracker payload.',
+  );
+}
+
+String _readString(
+  Map<String, dynamic> json,
+  String key, {
+  String? fallbackKey,
+}) {
+  final value = json[key] ?? (fallbackKey == null ? null : json[fallbackKey]);
+  if (value is String && value.isNotEmpty) {
+    return value;
+  }
+  throw FormatException(
+    'Missing string field "$key"${fallbackKey == null ? '' : ' or "$fallbackKey"'} in tracker payload.',
+  );
+}
+
+String _readUrl(Map<String, dynamic> json) {
+  return json['html_url'] as String? ??
+      json['url'] as String? ??
+      json['htmlUrl'] as String? ??
+      '';
+}
+
+String? _readLogin(Object? userNode) {
+  if (userNode is Map<String, dynamic>) {
+    final login = userNode['login']?.toString().trim();
+    if (login != null && login.isNotEmpty) {
+      return login;
+    }
+    final userName = userNode['user_name']?.toString().trim();
+    if (userName != null && userName.isNotEmpty) {
+      return userName;
+    }
+    final username = userNode['username']?.toString().trim();
+    if (username != null && username.isNotEmpty) {
+      return username;
+    }
+  }
+  return null;
 }
