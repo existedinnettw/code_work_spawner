@@ -9,7 +9,7 @@ import 'package:logging/logging.dart';
 import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
-import 'github_client.dart';
+import 'issue_tracker_client.dart';
 import 'notifier.dart';
 import 'workspace_manager.dart';
 
@@ -28,7 +28,7 @@ class IssueAssistantApp {
 
   final AppConfig config;
   final AppDatabase database;
-  final GitHubClient issueTrackerClient;
+  final IssueTrackerClient issueTrackerClient;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
   final NotifierRegistry Function(ProjectConfig project)
@@ -50,7 +50,7 @@ class IssueAssistantApp {
     return IssueAssistantApp._(
       config: config,
       database: database,
-      issueTrackerClient: GitHubClient(
+      issueTrackerClient: IssueTrackerClient(
         ghCommand: ghCommand,
         teaCommand: teaCommand,
       ),
@@ -259,14 +259,6 @@ class IssueAssistantApp {
     }
 
     try {
-      final batchSince = sinceByProject.values
-          .whereType<DateTime>()
-          .fold<DateTime?>(null, (current, next) {
-            if (current == null || next.isBefore(current)) {
-              return next;
-            }
-            return current;
-          });
       final issuesByProject = <String, List<GitHubIssueSummary>>{
         for (final project in projects) project.key: <GitHubIssueSummary>[],
       };
@@ -277,11 +269,20 @@ class IssueAssistantApp {
         if (providerProjects.isEmpty) {
           continue;
         }
+        final providerSince = providerProjects
+            .map((project) => sinceByProject[project.key])
+            .whereType<DateTime>()
+            .fold<DateTime?>(null, (current, next) {
+              if (current == null || next.isBefore(current)) {
+                return next;
+              }
+              return current;
+            });
 
         final issues = await issueTrackerClient.fetchUpdatedIssuesForRepos(
           provider: provider,
           repos: providerProjects.map((project) => project.repoSlug),
-          since: batchSince,
+          since: providerSince,
         );
         for (final issue in issues) {
           final project =

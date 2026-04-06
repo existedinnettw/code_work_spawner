@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'config.dart';
-import 'github_client.dart';
+import 'issue_tracker_client.dart';
 
 class CliResponderRunner {
   Future<ResponderResult> run({

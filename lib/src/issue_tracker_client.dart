@@ -5,8 +5,8 @@ import 'package:github/github.dart';
 
 import 'config_schema.dart';
 
-class GitHubClient {
-  GitHubClient({this.ghCommand = 'gh', this.teaCommand = 'tea'});
+class IssueTrackerClient {
+  IssueTrackerClient({this.ghCommand = 'gh', this.teaCommand = 'tea'});
 
   final String ghCommand;
   final String teaCommand;
