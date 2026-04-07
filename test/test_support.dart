@@ -182,6 +182,83 @@ Future<void> writeFakeGhScript({
   await Process.run('chmod', ['+x', ghScript.path]);
 }
 
+Future<void> writeFlakySearchGhScript({
+  required File ghScript,
+  required File failureStateFile,
+  required List<Map<String, Object?>> issueListResponse,
+  required Map<int, List<Map<String, Object?>>> commentResponses,
+  File? ghLog,
+}) async {
+  final searchItems = issueListResponse
+      .map(
+        (issue) => <String, Object?>{
+          ...issue,
+          'repository_url': 'https://api.github.com/repos/owner/sample',
+        },
+      )
+      .toList(growable: false);
+  final searchResponse = jsonEncode({
+    'total_count': searchItems.length,
+    'incomplete_results': false,
+    'items': searchItems,
+  });
+
+  final buffer = StringBuffer()
+    ..writeln('#!/usr/bin/env bash')
+    ..writeln('set -euo pipefail');
+
+  if (ghLog != null) {
+    buffer.writeln(
+      r'''printf '%s\n' "$*" >> '''
+      '"${ghLog.path}"',
+    );
+  }
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode({'login': 'test-user'}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
+    ..writeln('  if [[ ! -f "${failureStateFile.path}" ]]; then')
+    ..writeln('    touch "${failureStateFile.path}"')
+    ..writeln(r'''    echo "error connecting to api.github.com" >&2''')
+    ..writeln(
+      r'''    echo "check your internet connection or https://githubstatus.com" >&2''',
+    )
+    ..writeln('    exit 1')
+    ..writeln(r'''  fi''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(searchResponse)
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  for (final entry in commentResponses.entries) {
+    buffer
+      ..writeln(
+        'if [[ "\$1" == "api" && "\$4" == '
+        '"repos/owner/sample/issues/${entry.key}/comments?per_page=100" ]]; then',
+      )
+      ..writeln("  cat <<'JSON'")
+      ..writeln(jsonEncode(entry.value))
+      ..writeln('JSON')
+      ..writeln('  exit 0')
+      ..writeln('fi');
+  }
+
+  buffer
+    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
+    ..writeln('exit 1');
+
+  await ghScript.writeAsString(buffer.toString());
+  await Process.run('chmod', ['+x', ghScript.path]);
+}
+
 Future<void> writeFakeTeaScript({
   required File teaScript,
   required Map<String, List<Map<String, Object?>>> issueListResponsesByRepo,
