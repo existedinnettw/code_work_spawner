@@ -145,7 +145,9 @@ projects:
       final ghLogLines = await ghLog.readAsLines();
       expect(
         ghLogLines.any(
-          (line) => line.contains('api -X POST repos/owner/sample/hooks'),
+          (line) =>
+              line.contains('api -X POST repos/owner/sample/hooks') &&
+              line.contains('-F active=true'),
         ),
         isTrue,
       );

@@ -158,7 +158,7 @@ class IssueTrackerClient {
       _buildApiPath(repo, ['hooks']),
       '-f',
       'name=web',
-      '-f',
+      '-F',
       'active=true',
       '-f',
       'events[]=issues',

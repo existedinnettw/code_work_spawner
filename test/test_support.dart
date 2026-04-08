@@ -634,6 +634,22 @@ Future<void> writeGitHubGosmeeGhScript({
 
   buffer
     ..writeln('if [[ "\$1" == "api" && "\$4" == "repos/$repo/hooks" ]]; then')
+    ..writeln(r'''  active_flag=""''')
+    ..writeln(r'''  for ((i = 1; i <= $#; i += 1)); do''')
+    ..writeln(r'''    if [[ "${!i}" == "active=true" ]]; then''')
+    ..writeln(r'''      prev_index=$((i - 1))''')
+    ..writeln(r'''      active_flag="${!prev_index}"''')
+    ..writeln(r'''      break''')
+    ..writeln(r'''    fi''')
+    ..writeln(r'''  done''')
+    ..writeln(
+      r'''  if [[ "$active_flag" != "-F" && "$active_flag" != "--field" ]]; then''',
+    )
+    ..writeln(
+      r'''    echo "expected active=true to be sent with -F/--field, got: $*" >&2''',
+    )
+    ..writeln(r'''    exit 1''')
+    ..writeln(r'''  fi''')
     ..writeln("  cat <<'JSON'")
     ..writeln(jsonEncode({'id': webhookId}))
     ..writeln('JSON')
