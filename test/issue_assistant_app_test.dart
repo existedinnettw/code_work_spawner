@@ -914,7 +914,7 @@ projects:
     ///   And a responder that sleeps for one second while logging each issue number
     ///   And an orchestrator-style config with maxConcurrentIssues set to three
     ///   When the app processes one polling cycle
-    ///   Then the cycle completes in under three seconds
+    ///   Then all responder executions start before the first responder finishes
     ///   And all three issues still receive replies
     /// ```
     test('Process multiple issues concurrently up to the configured limit', () async {
@@ -1038,16 +1038,30 @@ projects:
       );
 
       // When the app processes one polling cycle.
-      final stopwatch = Stopwatch()..start();
       await app.runOnce();
-      stopwatch.stop();
       await app.close();
 
-      // Then the cycle completes in under three seconds.
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+      // Then all responder executions start before the first responder finishes.
       final eventLines = await eventLog.readAsLines();
-      expect(eventLines.where((line) => line.startsWith('start:')).length, 3);
-      expect(eventLines.where((line) => line.startsWith('end:')).length, 3);
+      final startLines = eventLines
+          .where((line) => line.startsWith('start:'))
+          .toList(growable: false);
+      final endLines = eventLines
+          .where((line) => line.startsWith('end:'))
+          .toList(growable: false);
+      final startTimes =
+          startLines
+              .map((line) => int.parse(line.split(':').last))
+              .toList(growable: false)
+            ..sort();
+      final endTimes =
+          endLines
+              .map((line) => int.parse(line.split(':').last))
+              .toList(growable: false)
+            ..sort();
+      expect(startLines, hasLength(3));
+      expect(endLines, hasLength(3));
+      expect(endTimes.first, greaterThanOrEqualTo(startTimes.last));
 
       // And all three issues still receive replies.
       final logLines = await ghLog.readAsLines();
