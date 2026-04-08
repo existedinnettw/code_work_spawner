@@ -38,6 +38,83 @@ abstract class IssueEventSource {
   Future<void> close();
 }
 
+class RoutedIssueEventSource implements IssueEventSource {
+  RoutedIssueEventSource({required this.sources});
+
+  final Map<IssueAssistantEventSourceKind, IssueEventSource> sources;
+
+  @override
+  Future<void> run({
+    required List<ProjectConfig> projects,
+    required IssueEventBatchHandler onBatch,
+  }) async {
+    final projectsBySource =
+        <IssueAssistantEventSourceKind, List<ProjectConfig>>{
+          for (final eventSource in sources.keys)
+            eventSource: <ProjectConfig>[],
+        };
+    for (final project in projects) {
+      for (final projectSource in _registeredSourcesFor(project)) {
+        final sourceProjects = projectsBySource[projectSource];
+        if (sourceProjects == null) {
+          throw StateError(
+            'No issue event source registered for ${projectSource.name}.',
+          );
+        }
+        sourceProjects.add(project);
+      }
+    }
+
+    await Future.wait(
+      projectsBySource.entries
+          .where((entry) => entry.value.isNotEmpty)
+          .map(
+            (entry) => sources[entry.key]!.run(
+              projects: entry.value,
+              onBatch: onBatch,
+            ),
+          ),
+    );
+  }
+
+  @override
+  Future<void> runOnce({
+    required List<ProjectConfig> projects,
+    required IssueEventBatchHandler onBatch,
+  }) {
+    return sources[IssueAssistantEventSourceKind.ghPolling]!.runOnce(
+      projects: projects,
+      onBatch: onBatch,
+    );
+  }
+
+  @override
+  Future<void> close() async {
+    for (final source in sources.values) {
+      await source.close();
+    }
+  }
+
+  Iterable<IssueAssistantEventSourceKind> _registeredSourcesFor(
+    ProjectConfig project,
+  ) sync* {
+    switch (project.issueAssistant.eventSource) {
+      case IssueAssistantEventSourceKind.ghPolling:
+        yield IssueAssistantEventSourceKind.ghPolling;
+      case IssueAssistantEventSourceKind.teaPolling:
+        yield IssueAssistantEventSourceKind.teaPolling;
+      case IssueAssistantEventSourceKind.ghWebhookForward:
+        // Keep reconciliation polling active for startup sync and missed
+        // webhook recovery while the forwarded channel handles low-latency
+        // issue/comment events.
+        yield IssueAssistantEventSourceKind.ghPolling;
+        yield IssueAssistantEventSourceKind.ghWebhookForward;
+      case IssueAssistantEventSourceKind.teaGosmee:
+        yield IssueAssistantEventSourceKind.teaGosmee;
+    }
+  }
+}
+
 class PollingIssueEventSource implements IssueEventSource {
   PollingIssueEventSource({
     required this.database,

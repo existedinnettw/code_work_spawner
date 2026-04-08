@@ -440,6 +440,136 @@ JSON
   await Process.run('chmod', ['+x', responderScript.path]);
 }
 
+Future<void> writeWebhookForwardGhScript({
+  required File ghScript,
+  required String repo,
+  required Map<String, Object?> issue,
+  required List<Map<String, Object?>> comments,
+  List<Map<String, Object?>> issueListResponse = const [],
+  File? ghLog,
+  File? postedBodyFile,
+  String? viewerLogin,
+}) async {
+  final issueNumber = issue['number'] as int;
+  final payload = {
+    'action': 'created',
+    'issue': issue,
+    'comment': comments.last,
+    'repository': {'full_name': repo},
+  };
+  final searchItems = issueListResponse
+      .map(
+        (searchIssue) => <String, Object?>{
+          ...searchIssue,
+          'repository_url': 'https://api.github.com/repos/$repo',
+        },
+      )
+      .toList(growable: false);
+  final searchResponse = jsonEncode({
+    'total_count': searchItems.length,
+    'incomplete_results': false,
+    'items': searchItems,
+  });
+
+  final buffer = StringBuffer()
+    ..writeln('#!/usr/bin/env bash')
+    ..writeln('set -euo pipefail');
+
+  if (ghLog != null) {
+    buffer.writeln(
+      r'''printf '%s\n' "$*" >> '''
+      '"${ghLog.path}"',
+    );
+  }
+
+  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
+  buffer
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(searchResponse)
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(
+      'if [[ "\$1" == "api" && "\$4" == '
+      '"repos/$repo/issues/$issueNumber/comments?per_page=100" ]]; then',
+    )
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode(comments))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(
+      'if [[ "\$1" == "api" && "\$4" == '
+      '"repos/$repo/issues/$issueNumber/comments" ]]; then',
+    )
+    ..writeln(r'''  for arg in "$@"; do''')
+    ..writeln(r'''    :''');
+  if (postedBodyFile != null) {
+    buffer
+      ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
+      ..writeln(
+        r'''      printf '%s' "${arg#body=}" > '''
+        '"${postedBodyFile.path}"',
+      )
+      ..writeln(r'''    fi''');
+  }
+  buffer
+    ..writeln(r'''  done''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(
+      jsonEncode({
+        'id': 702,
+        'html_url': 'https://example.test/comment/702',
+        'body': 'posted',
+      }),
+    )
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "webhook" && "$2" == "forward" ]]; then''')
+    ..writeln(r'''  url=""''')
+    ..writeln(r'''  for arg in "$@"; do''')
+    ..writeln(r'''    if [[ "$arg" == --url=* ]]; then''')
+    ..writeln(r'''      url="${arg#--url=}"''')
+    ..writeln(r'''    fi''')
+    ..writeln(r'''  done''')
+    ..writeln(r'''  if [[ -z "$url" ]]; then''')
+    ..writeln(r'''    echo "missing --url" >&2''')
+    ..writeln('    exit 1')
+    ..writeln(r'''  fi''')
+    ..writeln(r'''  curl -sS -X POST \''')
+    ..writeln(r'''    -H "Content-Type: application/json" \''')
+    ..writeln(r'''    -H "X-GitHub-Event: issue_comment" \''')
+    ..writeln(r'''    --data-binary @- "$url" <<'JSON' >/dev/null''')
+    ..writeln(jsonEncode(payload))
+    ..writeln('JSON')
+    ..writeln(r'''  while true; do''')
+    ..writeln(r'''    sleep 60''')
+    ..writeln(r'''  done''')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
+    ..writeln('exit 1');
+
+  await ghScript.writeAsString(buffer.toString());
+  await Process.run('chmod', ['+x', ghScript.path]);
+}
+
 Future<void> initGitRepo(Directory directory) async {
   await GitDir.init(directory.path, allowContent: true);
   await runGit([

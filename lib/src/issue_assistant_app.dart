@@ -8,6 +8,7 @@ import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
 import 'issue_event_source.dart';
+import 'issue_event_source_github_webhook_forward.dart';
 import 'issue_tracker_client.dart';
 import 'notifier.dart';
 import 'workspace_manager.dart';
@@ -31,6 +32,7 @@ class IssueAssistantApp {
   final IssueEventSource issueEventSource;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
+  final Map<String, Future<void>> _issueProcessingFutures = {};
   final NotifierRegistry Function(ProjectConfig project)
   notifierRegistryFactory;
 
@@ -45,14 +47,25 @@ class IssueAssistantApp {
       ghCommand: ghCommand,
       teaCommand: teaCommand,
     );
+    final pollingIssueEventSource = PollingIssueEventSource(
+      database: database,
+      issueTrackerClient: issueTrackerClient,
+      logger: _logger,
+    );
     return IssueAssistantApp._(
       config: config,
       database: database,
       issueTrackerClient: issueTrackerClient,
-      issueEventSource: PollingIssueEventSource(
-        database: database,
-        issueTrackerClient: issueTrackerClient,
-        logger: _logger,
+      issueEventSource: RoutedIssueEventSource(
+        sources: {
+          IssueAssistantEventSourceKind.ghPolling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.teaPolling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.ghWebhookForward:
+              GitHubWebhookForwardIssueEventSource(
+                issueTrackerClient: issueTrackerClient,
+                logger: _logger,
+              ),
+        },
       ),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
@@ -133,7 +146,7 @@ class IssueAssistantApp {
           'project=${project.key} process_issue issue=${issues[currentIndex].number} '
           'queue_index=${currentIndex + 1}/${issues.length} active_limit=$activeCount',
         );
-        await _processIssue(project, issues[currentIndex]);
+        await _processIssueSerialized(project, issues[currentIndex]);
       }
     }
 
@@ -426,6 +439,31 @@ class IssueAssistantApp {
         summary: selectedResult.summary,
       ),
     );
+  }
+
+  Future<void> _processIssueSerialized(
+    ProjectConfig project,
+    GitHubIssueSummary issue,
+  ) async {
+    final issueKey = '${project.key}#${issue.number}';
+    final previous = _issueProcessingFutures[issueKey];
+
+    late final Future<void> current;
+    current = () async {
+      if (previous != null) {
+        await previous.catchError((_) {});
+      }
+      await _processIssue(project, issue);
+    }();
+
+    _issueProcessingFutures[issueKey] = current;
+    try {
+      await current;
+    } finally {
+      if (identical(_issueProcessingFutures[issueKey], current)) {
+        _issueProcessingFutures.remove(issueKey);
+      }
+    }
   }
 
   String _buildPrompt({

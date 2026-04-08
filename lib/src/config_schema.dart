@@ -86,6 +86,7 @@ class ProjectConfigDocument {
 class IssueAssistantConfigDocument {
   const IssueAssistantConfigDocument({
     this.enabled,
+    this.eventSource,
     this.pollInterval,
     this.maxConcurrentIssues,
     this.mentionTriggers,
@@ -99,6 +100,7 @@ class IssueAssistantConfigDocument {
   });
 
   final bool? enabled;
+  final IssueAssistantEventSourceKind? eventSource;
   final String? pollInterval;
   final int? maxConcurrentIssues;
   final List<String>? mentionTriggers;
@@ -178,6 +180,17 @@ class NotificationConfigDocument {
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum AssistantCapability { planning, bugVerification }
+
+enum IssueAssistantEventSourceKind {
+  @JsonValue('gh/polling')
+  ghPolling,
+  @JsonValue('tea/polling')
+  teaPolling,
+  @JsonValue('gh/webhook-forward')
+  ghWebhookForward,
+  @JsonValue('tea/gosmee')
+  teaGosmee,
+}
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum IssueTrackerProvider { github, gitea }
