@@ -423,10 +423,16 @@ Future<void> writeDelayedLoggingResponderScript(
 }) async {
   await responderScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-printf 'start:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(date +%s)" >> "${eventLog.path}"
+timestamp_ms() {
+  python3 - <<'PY'
+import time
+print(int(time.time() * 1000))
+PY
+}
+printf 'start:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${eventLog.path}"
 cat >/dev/null
 sleep ${delay.inSeconds}
-printf 'end:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(date +%s)" >> "${eventLog.path}"
+printf 'end:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${eventLog.path}"
 cat <<'JSON'
 ${jsonEncode(response)}
 JSON

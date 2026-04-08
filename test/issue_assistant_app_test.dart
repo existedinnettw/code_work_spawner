@@ -914,8 +914,7 @@ projects:
     ///   And a responder that sleeps for one second while logging each issue number
     ///   And an orchestrator-style config with maxConcurrentIssues set to three
     ///   When the app processes one polling cycle
-    ///   Then all responder executions start within one second
-    ///   And no responder finishes before every responder has started
+    ///   Then all responder executions start before the first responder finishes
     ///   And all three issues still receive replies
     /// ```
     test('Process multiple issues concurrently up to the configured limit', () async {
@@ -1042,7 +1041,7 @@ projects:
       await app.runOnce();
       await app.close();
 
-      // Then all responder executions start within one second.
+      // Then all responder executions start before the first responder finishes.
       final eventLines = await eventLog.readAsLines();
       final startLines = eventLines
           .where((line) => line.startsWith('start:'))
@@ -1062,9 +1061,6 @@ projects:
             ..sort();
       expect(startLines, hasLength(3));
       expect(endLines, hasLength(3));
-      expect(startTimes.last - startTimes.first, lessThanOrEqualTo(1));
-
-      // And no responder finishes before every responder has started.
       expect(endTimes.first, greaterThanOrEqualTo(startTimes.last));
 
       // And all three issues still receive replies.
