@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:git/git.dart';
 import 'package:path/path.dart' as p;
 
+import 'app_environment.dart';
+
 class WorkspaceManager {
   WorkspaceManager({this.worktreeRoot});
 
@@ -86,7 +88,7 @@ class WorkspaceManager {
   }
 
   Future<ProcessResult> _runGit(List<String> arguments) {
-    final environment = Map<String, String>.from(Platform.environment)
+    final environment = Map<String, String>.from(AppEnvironment.variables)
       ..removeWhere((key, _) => _gitContextEnvironmentKeys.contains(key));
     return Process.run(
       'git',

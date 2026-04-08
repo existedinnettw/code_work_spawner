@@ -5,6 +5,7 @@ import 'package:github/github.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+import 'app_environment.dart';
 import 'comment_templates.dart';
 import 'config_schema.dart';
 export 'config_schema.dart'
@@ -71,6 +72,7 @@ class AppConfig {
   final Map<String, ProjectConfig> projects;
 
   static Future<AppConfig> load(String path) async {
+    AppEnvironment.loadForConfig(path);
     final file = File(path);
     final contents = await file.readAsString();
     final yaml = loadYaml(contents);
@@ -645,7 +647,7 @@ String _expandHome(String path) {
     return p.normalize(p.absolute(path));
   }
 
-  final home = Platform.environment['HOME'];
+  final home = AppEnvironment.get('HOME');
   if (home == null || home.isEmpty) {
     throw const FileSystemException('HOME is not set.');
   }
@@ -666,7 +668,7 @@ String? _expandOptionalEnvironmentString(String? value) {
   return value.replaceAllMapped(RegExp(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}'), (
     match,
   ) {
-    return Platform.environment[match.group(1)!] ?? '';
+    return AppEnvironment.get(match.group(1)!) ?? '';
   });
 }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'app_environment.dart';
 import 'config.dart';
 import 'issue_tracker_client.dart';
 
@@ -31,7 +32,7 @@ class CliResponderRunner {
       responder.args,
       workingDirectory: workspacePath,
       environment: <String, String>{
-        ...Platform.environment,
+        ...AppEnvironment.variables,
         ...responder.env,
         'CWS_PROJECT_KEY': project.key,
         'CWS_REPO': project.repo,

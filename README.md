@@ -28,6 +28,12 @@ Create a local `agent-orchestrator.yaml` and use
 [`examples/README.md`](examples/README.md) plus
 [`examples/simple-github.yaml`](examples/simple-github.yaml) as the reference.
 
+Environment placeholders such as `${CWS_DISCORD_WEBHOOK}` are resolved from the
+process environment and from a `.env` file placed next to the selected config
+file. Logging also supports `CWS_LOG_LEVEL` (or `LOG_LEVEL`) with values such
+as `trace`, `debug`, `info`, `warning`, `error`, or `fatal`. See
+[.env.example](.env.example) for a minimal starter file.
+
 Generate a starter config:
 
 ```bash
