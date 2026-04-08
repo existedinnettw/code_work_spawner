@@ -48,6 +48,16 @@ class RoutedIssueEventSource implements IssueEventSource {
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) async {
+    final startupReconcileProjects = projects
+        .where(_shouldRunStartupReconciliation)
+        .toList(growable: false);
+    if (startupReconcileProjects.isNotEmpty) {
+      await sources[IssueAssistantEventSourceKind.ghPolling]!.runOnce(
+        projects: startupReconcileProjects,
+        onBatch: onBatch,
+      );
+    }
+
     final projectsBySource =
         <IssueAssistantEventSourceKind, List<ProjectConfig>>{
           for (final eventSource in sources.keys)
@@ -98,31 +108,38 @@ class RoutedIssueEventSource implements IssueEventSource {
   Iterable<IssueAssistantEventSourceKind> _registeredSourcesFor(
     ProjectConfig project,
   ) sync* {
-    switch (project.issueAssistant.eventSource) {
+    switch (project.issueAssistant.eventSource.type) {
       case IssueAssistantEventSourceKind.ghPolling:
         yield IssueAssistantEventSourceKind.ghPolling;
       case IssueAssistantEventSourceKind.teaPolling:
         yield IssueAssistantEventSourceKind.teaPolling;
       case IssueAssistantEventSourceKind.ghGosmee:
-        // Keep reconciliation polling active for startup sync and missed
-        // webhook recovery while gosmee handles low-latency issue/comment
-        // events for GitHub projects.
-        yield IssueAssistantEventSourceKind.ghPolling;
+        if (_shouldRunContinuousReconciliation(project)) {
+          yield IssueAssistantEventSourceKind.ghPolling;
+        }
         yield IssueAssistantEventSourceKind.ghGosmee;
       case IssueAssistantEventSourceKind.ghWebhookForward:
-        // Keep reconciliation polling active for startup sync and missed
-        // webhook recovery while the forwarded channel handles low-latency
-        // issue/comment events.
-        yield IssueAssistantEventSourceKind.ghPolling;
+        if (_shouldRunContinuousReconciliation(project)) {
+          yield IssueAssistantEventSourceKind.ghPolling;
+        }
         yield IssueAssistantEventSourceKind.ghWebhookForward;
       case IssueAssistantEventSourceKind.teaGosmee:
-        // Keep reconciliation polling active for startup sync and missed
-        // webhook recovery while gosmee handles low-latency issue/comment
-        // events for Gitea projects.
-        yield IssueAssistantEventSourceKind.teaPolling;
+        if (_shouldRunContinuousReconciliation(project)) {
+          yield IssueAssistantEventSourceKind.teaPolling;
+        }
         yield IssueAssistantEventSourceKind.teaGosmee;
     }
   }
+
+  bool _shouldRunStartupReconciliation(ProjectConfig project) =>
+      project.issueAssistant.eventSource.usesChannelEventSource;
+
+  bool _shouldRunContinuousReconciliation(ProjectConfig project) =>
+      project.issueAssistant.eventSource.usesChannelEventSource &&
+      project.issueAssistant.eventSource is ChannelIssueEventSourceConfig &&
+      (project.issueAssistant.eventSource as ChannelIssueEventSourceConfig)
+              .reconciliation ==
+          IssueAssistantReconciliationKind.continuous;
 }
 
 class PollingIssueEventSource implements IssueEventSource {
@@ -242,7 +259,12 @@ class PollingIssueEventSource implements IssueEventSource {
         for (final state in dueStates) {
           while (!state.nextDueAt.isAfter(batchCompletedAt)) {
             state.nextDueAt = state.nextDueAt.add(
-              state.project.issueAssistant.pollInterval,
+              switch (state.project.issueAssistant.eventSource) {
+                PollingIssueEventSourceConfig(:final pollInterval) =>
+                  pollInterval,
+                ChannelIssueEventSourceConfig(:final reconcileInterval) =>
+                  reconcileInterval,
+              },
             );
           }
         }

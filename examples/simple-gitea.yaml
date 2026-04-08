@@ -7,10 +7,14 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    # Use tea/gosmee for long-running runs while keeping --once and missed-event
-    # recovery on polling reconciliation.
-    # eventSource: tea/gosmee
-    pollInterval: 30s
+    # Use tea/gosmee for long-running runs.
+    eventSource:
+      type: tea/polling
+      pollInterval: 30s
+    # eventSource:
+    #   type: tea/gosmee
+    #   reconciliation: startup-only
+    #   reconcileInterval: 30s
     maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
     responders:
