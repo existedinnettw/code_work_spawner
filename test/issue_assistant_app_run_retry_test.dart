@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -85,11 +84,11 @@ projects:
         ghCommand: ghScript.path,
       );
       final logMessages = <String>[];
-      final previousLevel = Logger.root.level;
-      Logger.root.level = Level.INFO;
-      final subscription = Logger.root.onRecord.listen((record) {
+      void captureLog(AppLogRecord record) {
         logMessages.add(record.message);
-      });
+      }
+
+      AppLogger.addListener(captureLog);
 
       // When the long-running app starts and enough time passes for a retry.
       final runFuture = app.run();
@@ -114,8 +113,7 @@ projects:
       }
       await app.close();
       await runFuture;
-      await subscription.cancel();
-      Logger.root.level = previousLevel;
+      AppLogger.removeListener(captureLog);
 
       // Then the app logs the failed poll without stopping entirely.
       expect(

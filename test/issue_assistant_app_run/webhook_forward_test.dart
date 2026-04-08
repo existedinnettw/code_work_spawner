@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -140,7 +139,7 @@ projects:
     ///   And a gh script that writes a webhook creation failure to stderr while forwarding
     ///   And an orchestrator-style config that uses gh/webhook-forward
     ///   When the long-running app starts and webhook-forward emits that stderr line
-    ///   Then the app logs the webhook-forward stderr message at severe level
+    ///   Then the app logs the webhook-forward stderr message at error level
     /// ```
     test('Log webhook forward stderr at error level', () async {
       // Given a temporary project checkout that can be used as the local repo path.
@@ -193,10 +192,12 @@ projects:
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
       );
-      final records = <LogRecord>[];
-      final previousLevel = Logger.root.level;
-      Logger.root.level = Level.ALL;
-      final subscription = Logger.root.onRecord.listen(records.add);
+      final records = <AppLogRecord>[];
+      void captureLog(AppLogRecord record) {
+        records.add(record);
+      }
+
+      AppLogger.addListener(captureLog);
 
       // When the long-running app starts and webhook-forward emits that stderr line.
       final runFuture = app.run();
@@ -210,14 +211,13 @@ projects:
       }
       await app.close();
       await runFuture;
-      await subscription.cancel();
-      Logger.root.level = previousLevel;
+      AppLogger.removeListener(captureLog);
 
-      // Then the app logs the webhook-forward stderr message at severe level.
+      // Then the app logs the webhook-forward stderr message at error level.
       expect(
         records.any(
           (record) =>
-              record.level == Level.SEVERE &&
+              record.level == AppLogLevel.error &&
               record.message.contains(
                 'stderr=Error: error creating webhook: HTTP 422: Validation Failed',
               ),

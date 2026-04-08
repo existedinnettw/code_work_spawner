@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
-import 'package:logging/logging.dart';
 
+import 'app_logger.dart';
 import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
@@ -16,7 +16,7 @@ import 'notifier.dart';
 import 'workspace_manager.dart';
 
 class IssueAssistantApp {
-  static final Logger _logger = Logger('code_work_spawner.app');
+  static final AppLogger _logger = AppLogger('code_work_spawner.app');
 
   IssueAssistantApp._({
     required this.config,
