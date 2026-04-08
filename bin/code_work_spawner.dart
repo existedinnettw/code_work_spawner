@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:args/command_runner.dart';
 import 'package:code_work_spawner/code_work_spawner.dart';
-import 'package:logging/logging.dart';
 
 Future<void> main(List<String> arguments) async {
   _configureLogging();
@@ -73,7 +72,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
     }
 
     final config = await AppConfig.load(topLevelResults['config'] as String);
-    final logger = Logger('code_work_spawner.cli');
+    final logger = AppLogger('code_work_spawner.cli');
     logger.info(
       'loaded config=${config.configPath} '
       'projects=${config.projects.length} '
@@ -162,11 +161,8 @@ class _InitConfigCommand extends Command<void> {
 }
 
 void _configureLogging() {
-  hierarchicalLoggingEnabled = true;
-  Logger.root.level = Level.INFO;
-  Logger.root.onRecord.listen((record) {
-    stdout.writeln(
-      '[${record.loggerName}] ${record.level.name}: ${record.message}',
-    );
-  });
+  AppLogger.configure(
+    minimumLevel: AppLogLevel.info,
+    useColors: stdout.hasTerminal,
+  );
 }

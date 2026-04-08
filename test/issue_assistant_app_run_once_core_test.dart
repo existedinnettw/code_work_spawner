@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -300,16 +299,15 @@ projects:
         ghCommand: ghScript.path,
       );
       final logMessages = <String>[];
-      final previousLevel = Logger.root.level;
-      Logger.root.level = Level.INFO;
-      final subscription = Logger.root.onRecord.listen((record) {
+      void captureLog(AppLogRecord record) {
         logMessages.add(record.message);
-      });
+      }
+
+      AppLogger.addListener(captureLog);
 
       // When the app processes one polling cycle while app logs are captured.
       await app.runOnce();
-      await subscription.cancel();
-      Logger.root.level = previousLevel;
+      AppLogger.removeListener(captureLog);
       await app.close();
 
       // Then the application logs include the responder stdout payload.

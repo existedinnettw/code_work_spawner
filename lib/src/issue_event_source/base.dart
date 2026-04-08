@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:github/github.dart';
-import 'package:logging/logging.dart';
 
+import '../app_logger.dart';
 import '../config.dart';
 import '../database.dart';
 import '../issue_tracker_client.dart';
@@ -129,14 +129,14 @@ class PollingIssueEventSource implements IssueEventSource {
   PollingIssueEventSource({
     required this.database,
     required this.issueTrackerClient,
-    required Logger logger,
+    required AppLogger logger,
   }) : _logger = logger;
 
   static const Duration _pollCoalescingWindow = Duration(seconds: 2);
 
   final AppDatabase database;
   final IssueTrackerClient issueTrackerClient;
-  final Logger _logger;
+  final AppLogger _logger;
   final Map<String, _ProjectPollState> _projectPollStates = {};
   final Set<Future<void>> _activePolls = <Future<void>>{};
   Timer? _schedulerTimer;

@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:logging/logging.dart';
-
+import '../app_logger.dart';
 import '../config.dart';
 import '../issue_tracker_client.dart';
 import 'base.dart';
@@ -11,13 +10,13 @@ import 'base.dart';
 class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
   GitHubWebhookForwardIssueEventSource({
     required this.issueTrackerClient,
-    required Logger logger,
+    required AppLogger logger,
   }) : _logger = logger;
 
   static const Duration _webhookCoalescingWindow = Duration(milliseconds: 500);
 
   final IssueTrackerClient issueTrackerClient;
-  final Logger _logger;
+  final AppLogger _logger;
   final Map<String, _QueuedWebhookIssue> _queuedIssues = {};
   final Set<Future<void>> _activeDispatches = <Future<void>>{};
   final Map<String, Process> _forwardProcesses = {};
@@ -72,7 +71,15 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
 
     final url =
         'http://${server.address.address}:${server.port}/github/webhooks';
+    _log(
+      'github/webhook-forward listening local_url=$url '
+      'projects=${githubProjects.map((project) => project.key).join(",")}',
+    );
     for (final project in githubProjects) {
+      _log(
+        'github/webhook-forward project=${project.key} start_forwarder '
+        'command="${issueTrackerClient.ghCommand} webhook forward --events=issues,issue_comment --repo=${project.repo} --url=$url"',
+      );
       final process = await Process.start(issueTrackerClient.ghCommand, [
         'webhook',
         'forward',
@@ -168,6 +175,10 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
     required IssueEventBatchHandler onBatch,
   }) async {
     if (request.method != 'POST') {
+      _log(
+        'github/webhook-forward webhook ignored method=${request.method} '
+        'path=${request.uri.path}',
+      );
       request.response
         ..statusCode = HttpStatus.methodNotAllowed
         ..write('Only POST is supported.');
@@ -187,12 +198,17 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
           : null;
       final project = fullName == null ? null : repoToProject[fullName];
       final issueNode = payload['issue'];
+      final action = payload['action']?.toString() ?? 'unknown';
       if (project != null &&
           issueNode is Map<String, dynamic> &&
           (issueNode['pull_request'] == null)) {
         final issue = GitHubIssueSummary.fromRepositoryJson(
           project.repoSlug,
           issueNode,
+        );
+        _log(
+          'github/webhook-forward webhook accepted project=${project.key} '
+          'repo=$fullName action=$action issue=${issue.number} state=${issue.state}',
         );
         if (issue.state == 'open') {
           _queuedIssues['${project.key}#${issue.number}'] = _QueuedWebhookIssue(
@@ -202,6 +218,13 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
           );
           _scheduleFlush();
         }
+      } else {
+        _log(
+          'github/webhook-forward webhook ignored repo=${fullName ?? "(missing)"} '
+          'action=$action matched_project=${project != null} '
+          'has_issue=${issueNode is Map<String, dynamic>} '
+          'is_pull_request=${issueNode is Map<String, dynamic> && issueNode["pull_request"] != null}',
+        );
       }
 
       request.response.statusCode = HttpStatus.accepted;
@@ -294,7 +317,7 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
   }
 
   void _logError(String message) {
-    _logger.severe(message);
+    _logger.error(message);
   }
 }
 
