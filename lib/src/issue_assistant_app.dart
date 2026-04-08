@@ -45,14 +45,21 @@ class IssueAssistantApp {
       ghCommand: ghCommand,
       teaCommand: teaCommand,
     );
+    final pollingIssueEventSource = PollingIssueEventSource(
+      database: database,
+      issueTrackerClient: issueTrackerClient,
+      logger: _logger,
+    );
     return IssueAssistantApp._(
       config: config,
       database: database,
       issueTrackerClient: issueTrackerClient,
-      issueEventSource: PollingIssueEventSource(
-        database: database,
-        issueTrackerClient: issueTrackerClient,
-        logger: _logger,
+      issueEventSource: RoutedIssueEventSource(
+        pollingSource: pollingIssueEventSource,
+        githubWebhookForwardSource: GitHubWebhookForwardIssueEventSource(
+          issueTrackerClient: issueTrackerClient,
+          logger: _logger,
+        ),
       ),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),

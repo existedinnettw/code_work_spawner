@@ -10,6 +10,7 @@ import 'config_schema.dart';
 export 'config_schema.dart'
     show
         AssistantCapability,
+        IssueAssistantEventSourceKind,
         IssueTrackerProvider,
         NotificationConfigDocument,
         NotificationEvent,
@@ -132,6 +133,7 @@ class AppConfig {
       defaults: AppConfigDefaultsDocument(
         issueAssistant: IssueAssistantConfigDocument(
           enabled: true,
+          eventSource: IssueAssistantEventSourceKind.polling,
           pollInterval: '30s',
           maxConcurrentIssues: 3,
           mentionTriggers: const ['@codex', '@helper'],
@@ -188,15 +190,26 @@ class ProjectConfig {
       );
     }
 
+    final provider = document.provider ?? IssueTrackerProvider.github;
+    final issueAssistant = defaultAssistant.merge(document.issueAssistant);
+    if (issueAssistant.eventSource ==
+            IssueAssistantEventSourceKind.githubWebhookForward &&
+        provider != IssueTrackerProvider.github) {
+      throw FormatException(
+        'projects.$key.issueAssistant.eventSource '
+        'github/webhook-forward requires provider: github.',
+      );
+    }
+
     return ProjectConfig(
       key: key,
-      provider: document.provider ?? IssueTrackerProvider.github,
+      provider: provider,
       repo: repo,
       repoSlug: _parseRepositorySlug(repo, field: 'projects.$key.repo'),
       path: _expandHome(path),
       defaultBranch: document.defaultBranch ?? 'main',
       sessionPrefix: document.sessionPrefix ?? _deriveSessionPrefix(key),
-      issueAssistant: defaultAssistant.merge(document.issueAssistant),
+      issueAssistant: issueAssistant,
     );
   }
 
@@ -217,6 +230,7 @@ class ProjectConfig {
 class IssueAssistantConfig {
   IssueAssistantConfig({
     required this.enabled,
+    required this.eventSource,
     required this.pollInterval,
     required this.maxConcurrentIssues,
     required this.mentionTriggers,
@@ -230,6 +244,7 @@ class IssueAssistantConfig {
   });
 
   final bool enabled;
+  final IssueAssistantEventSourceKind eventSource;
   final Duration pollInterval;
   final int maxConcurrentIssues;
   final List<String> mentionTriggers;
@@ -349,6 +364,10 @@ class _IssueAssistantConfigResolver {
     final notifications = overlay?.notifications;
     return IssueAssistantConfig(
       enabled: overlay?.enabled ?? base?.enabled ?? true,
+      eventSource:
+          overlay?.eventSource ??
+          base?.eventSource ??
+          IssueAssistantEventSourceKind.polling,
       pollInterval: overlay?.pollInterval != null
           ? _parseDuration(overlay!.pollInterval!)
           : base?.pollInterval ?? const Duration(seconds: 30),
@@ -610,6 +629,7 @@ ${_YamlEmitter().write({'defaults': defaultsSection})}
 
     # capabilities: ["planning", "bug_verification"]
     # commentTag: code-work-spawner
+    # eventSource: polling
     # commentPrefixTemplate: |
 ${_commentBlock(defaultCommentPrefixTemplate, indent: '    #   ')}
     # commentFooterTemplate: |
@@ -638,6 +658,7 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
+    #   eventSource: github/webhook-forward
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

@@ -27,7 +27,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       ..addFlag(
         'once',
         abbr: '1',
-        help: 'Run a single poll cycle and exit.',
+        help: 'Run a single reconciliation cycle and exit.',
         negatable: false,
       )
       ..addOption(
