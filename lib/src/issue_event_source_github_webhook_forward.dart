@@ -279,7 +279,13 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
     stream.transform(utf8.decoder).transform(const LineSplitter()).listen((
       line,
     ) {
-      _log('github/webhook-forward project=${project.key} $level=$line');
+      final message =
+          'github/webhook-forward project=${project.key} $level=$line';
+      if (level == 'stderr') {
+        _logError(message);
+        return;
+      }
+      _log(message);
     });
   }
 
