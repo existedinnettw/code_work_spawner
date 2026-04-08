@@ -116,6 +116,53 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Resolve config placeholders from a colocated dotenv file
+    ///   Given an orchestrator config with environment placeholders and a colocated dotenv file
+    ///   When loading the app config from disk
+    ///   Then placeholder values are resolved from the dotenv file
+    ///   And later runtime lookups use the same loaded environment values
+    /// ```
+    test('Resolve config placeholders from a colocated dotenv file', () async {
+      // Given an orchestrator config with environment placeholders and a colocated dotenv file.
+      final tempDir = await Directory.systemTemp.createTemp('cws-dotenv-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final dotenvFile = File(p.join(tempDir.path, '.env'));
+      addTearDown(AppEnvironment.resetForTest);
+      await dotenvFile.writeAsString('''
+CWS_SAMPLE_WEBHOOK=https://dotenv.example.test/webhook
+CWS_LOG_LEVEL=debug
+''');
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    notifications:
+      - type: discordWebhook
+        webhookUrl: \${CWS_SAMPLE_WEBHOOK}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then placeholder values are resolved from the dotenv file.
+      expect(
+        config
+            .projects['sample']!
+            .issueAssistant
+            .notifications
+            .single
+            .webhookUrl,
+        'https://dotenv.example.test/webhook',
+      );
+
+      // And later runtime lookups use the same loaded environment values.
+      expect(AppEnvironment.get('CWS_LOG_LEVEL'), 'debug');
+    });
+
+    /// ```gherkin
     /// Scenario: Override visible comment templates per project
     ///   Given camelCase config with shared defaults and project-specific comment templates
     ///   When loading the app config from disk

@@ -36,6 +36,36 @@ class AppLogger {
 
   static AppLogLevel get minimumLevel => _minimumLevel;
 
+  static AppLogLevel resolveMinimumLevel(
+    Map<String, String> environment, {
+    AppLogLevel fallback = AppLogLevel.info,
+  }) {
+    final configuredLevel =
+        environment['CWS_LOG_LEVEL'] ?? environment['LOG_LEVEL'];
+    return configuredLevel == null
+        ? fallback
+        : parseLevel(configuredLevel) ?? fallback;
+  }
+
+  static AppLogLevel? parseLevel(String value) {
+    switch (value.trim().toLowerCase()) {
+      case 'trace':
+        return AppLogLevel.trace;
+      case 'debug':
+        return AppLogLevel.debug;
+      case 'info':
+        return AppLogLevel.info;
+      case 'warn':
+      case 'warning':
+        return AppLogLevel.warning;
+      case 'error':
+        return AppLogLevel.error;
+      case 'fatal':
+        return AppLogLevel.fatal;
+    }
+    return null;
+  }
+
   static void configure({
     AppLogLevel minimumLevel = AppLogLevel.info,
     bool useColors = true,

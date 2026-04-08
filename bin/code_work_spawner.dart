@@ -5,8 +5,6 @@ import 'package:args/command_runner.dart';
 import 'package:code_work_spawner/code_work_spawner.dart';
 
 Future<void> main(List<String> arguments) async {
-  _configureLogging();
-
   final runner = _CodeWorkSpawnerCommandRunner();
   try {
     await runner.run(arguments);
@@ -71,7 +69,11 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       return;
     }
 
-    final config = await AppConfig.load(topLevelResults['config'] as String);
+    final configPath = topLevelResults['config'] as String;
+    AppEnvironment.loadForConfig(configPath);
+    _configureLogging();
+
+    final config = await AppConfig.load(configPath);
     final logger = AppLogger('code_work_spawner.cli');
     logger.info(
       'loaded config=${config.configPath} '
@@ -162,7 +164,7 @@ class _InitConfigCommand extends Command<void> {
 
 void _configureLogging() {
   AppLogger.configure(
-    minimumLevel: AppLogLevel.info,
+    minimumLevel: AppLogger.resolveMinimumLevel(AppEnvironment.variables),
     useColors: stdout.hasTerminal,
   );
 }
