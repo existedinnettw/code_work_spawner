@@ -431,6 +431,78 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load tea/gosmee as the issue event source
+    ///   Given a Gitea project config that opts into tea/gosmee
+    ///   When loading the app config from disk
+    ///   Then the project keeps tea/gosmee as its event source
+    ///   And the Gitea provider remains valid for that project
+    /// ```
+    test('Load tea/gosmee as the issue event source', () async {
+      // Given a Gitea project config that opts into tea/gosmee.
+      final tempDir = await Directory.systemTemp.createTemp('cws-gosmee-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: gitea
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource: tea/gosmee
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps tea/gosmee as its event source.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource,
+        IssueAssistantEventSourceKind.teaGosmee,
+      );
+
+      // And the Gitea provider remains valid for that project.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
+    });
+
+    /// ```gherkin
+    /// Scenario: Reject tea/gosmee for non-Gitea providers
+    ///   Given a GitHub project config that opts into tea/gosmee
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear provider compatibility error
+    /// ```
+    test('Reject tea/gosmee for non-Gitea providers', () async {
+      // Given a GitHub project config that opts into tea/gosmee.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-gosmee-github-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: github
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource: tea/gosmee
+''');
+
+      // When loading the app config from disk.
+      final load = AppConfig.load(configFile.path);
+
+      // Then loading fails with a clear provider compatibility error.
+      await expectLater(
+        load,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('tea/gosmee requires provider: gitea'),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
     /// Scenario: Reject snake_case config keys
     ///   Given a config that still uses snake_case keys
     ///   When loading the app config from disk

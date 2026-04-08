@@ -50,6 +50,11 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
         'tea-command',
         help: 'Path to the tea executable.',
         defaultsTo: 'tea',
+      )
+      ..addOption(
+        'gosmee-command',
+        help: 'Path to the gosmee executable.',
+        defaultsTo: 'gosmee',
       );
 
     addCommand(_InitConfigCommand());
@@ -88,6 +93,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       config: config,
       databasePath: topLevelResults['db'] as String,
       ghCommand: topLevelResults['gh-command'] as String,
+      gosmeeCommand: topLevelResults['gosmee-command'] as String,
       teaCommand: topLevelResults['tea-command'] as String,
     );
 

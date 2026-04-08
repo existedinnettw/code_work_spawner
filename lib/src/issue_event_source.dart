@@ -110,6 +110,10 @@ class RoutedIssueEventSource implements IssueEventSource {
         yield IssueAssistantEventSourceKind.ghPolling;
         yield IssueAssistantEventSourceKind.ghWebhookForward;
       case IssueAssistantEventSourceKind.teaGosmee:
+        // Keep reconciliation polling active for startup sync and missed
+        // webhook recovery while gosmee handles low-latency issue/comment
+        // events for Gitea projects.
+        yield IssueAssistantEventSourceKind.teaPolling;
         yield IssueAssistantEventSourceKind.teaGosmee;
     }
   }

@@ -8,6 +8,7 @@ import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
 import 'issue_event_source.dart';
+import 'issue_event_source_gitea_gosmee.dart';
 import 'issue_event_source_github_webhook_forward.dart';
 import 'issue_tracker_client.dart';
 import 'notifier.dart';
@@ -40,6 +41,7 @@ class IssueAssistantApp {
     required AppConfig config,
     required String databasePath,
     String ghCommand = 'gh',
+    String gosmeeCommand = 'gosmee',
     String teaCommand = 'tea',
   }) async {
     final database = AppDatabase.open(databasePath);
@@ -65,6 +67,11 @@ class IssueAssistantApp {
                 issueTrackerClient: issueTrackerClient,
                 logger: _logger,
               ),
+          IssueAssistantEventSourceKind.teaGosmee: GiteaGosmeeIssueEventSource(
+            issueTrackerClient: issueTrackerClient,
+            gosmeeCommand: gosmeeCommand,
+            logger: _logger,
+          ),
         },
       ),
       responderRunner: CliResponderRunner(),

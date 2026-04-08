@@ -218,10 +218,12 @@ class ProjectConfig {
           );
         }
       case IssueAssistantEventSourceKind.teaGosmee:
-        throw FormatException(
-          'projects.$key.issueAssistant.eventSource tea/gosmee '
-          'is not implemented yet.',
-        );
+        if (provider != IssueTrackerProvider.gitea) {
+          throw FormatException(
+            'projects.$key.issueAssistant.eventSource tea/gosmee '
+            'requires provider: gitea.',
+          );
+        }
     }
 
     return ProjectConfig(

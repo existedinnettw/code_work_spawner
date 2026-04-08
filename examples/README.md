@@ -8,11 +8,14 @@ event source.
 
 GitHub projects default to `gh/polling`, and Gitea projects default to
 `tea/polling`. GitHub projects can switch their long-running runtime to
-`gh/webhook-forward`, which starts
+`gh/webhook-forward`, and Gitea projects can switch to `tea/gosmee`.
+`gh/webhook-forward` starts
 `gh webhook forward` for `issues` and `issue_comment` events while keeping
 periodic polling reconciliation for startup sync and missed-event recovery.
-`--once` still uses a single polling reconciliation cycle so existing backlog
-handling keeps working.
+`tea/gosmee` creates a temporary Gitea webhook that targets a generated gosmee
+URL, then keeps the same polling reconciliation path active for startup sync
+and missed-event recovery. `--once` still uses a single polling reconciliation
+cycle so existing backlog handling keeps working.
 
 Generated comments include both a visible prefix and footer by default so it is
 clear the reply came from automation even when `gh` or `tea` is authenticated

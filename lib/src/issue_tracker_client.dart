@@ -121,6 +121,46 @@ class IssueTrackerClient {
     };
   }
 
+  Future<int> createGiteaIssueWebhook({
+    required RepositorySlug repo,
+    required String url,
+  }) async {
+    final json = await _runTeaJson([
+      'webhooks',
+      'create',
+      '--type',
+      'gitea',
+      '--events',
+      'issues,issue_comment',
+      '--active',
+      '-o',
+      'json',
+      '-r',
+      repo.fullName,
+      url,
+    ]);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException(
+        'tea webhooks create returned an unexpected response.',
+      );
+    }
+    return _readInt(json, 'id');
+  }
+
+  Future<void> deleteGiteaWebhook({
+    required RepositorySlug repo,
+    required int webhookId,
+  }) async {
+    await _runTeaJson([
+      'webhooks',
+      'delete',
+      '--confirm',
+      '-r',
+      repo.fullName,
+      '$webhookId',
+    ]);
+  }
+
   Future<List<GitHubIssueSummary>> _fetchUpdatedGitHubIssues({
     required Iterable<RepositorySlug> repos,
     required DateTime? since,
