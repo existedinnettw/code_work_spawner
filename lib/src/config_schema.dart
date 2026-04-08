@@ -182,10 +182,14 @@ class NotificationConfigDocument {
 enum AssistantCapability { planning, bugVerification }
 
 enum IssueAssistantEventSourceKind {
-  @JsonValue('polling')
-  polling,
-  @JsonValue('github/webhook-forward')
-  githubWebhookForward,
+  @JsonValue('gh/polling')
+  ghPolling,
+  @JsonValue('tea/polling')
+  teaPolling,
+  @JsonValue('gh/webhook-forward')
+  ghWebhookForward,
+  @JsonValue('tea/gosmee')
+  teaGosmee,
 }
 
 @JsonEnum(fieldRename: FieldRename.snake)

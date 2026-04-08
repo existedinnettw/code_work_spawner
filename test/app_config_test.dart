@@ -350,17 +350,21 @@ projects:
 
       // And the repository slug still parses normally.
       expect(config.projects['sample']!.repoSlug.fullName, 'owner/sample');
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource,
+        IssueAssistantEventSourceKind.teaPolling,
+      );
     });
 
     /// ```gherkin
-    /// Scenario: Load github/webhook-forward as the issue event source
-    ///   Given a GitHub project config that opts into github/webhook-forward
+    /// Scenario: Load gh/webhook-forward as the issue event source
+    ///   Given a GitHub project config that opts into gh/webhook-forward
     ///   When loading the app config from disk
-    ///   Then the project keeps github/webhook-forward as its event source
+    ///   Then the project keeps gh/webhook-forward as its event source
     ///   And the GitHub provider remains valid for that project
     /// ```
-    test('Load github/webhook-forward as the issue event source', () async {
-      // Given a GitHub project config that opts into github/webhook-forward.
+    test('Load gh/webhook-forward as the issue event source', () async {
+      // Given a GitHub project config that opts into gh/webhook-forward.
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-webhook-forward-',
       );
@@ -372,16 +376,16 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: github/webhook-forward
+      eventSource: gh/webhook-forward
 ''');
 
       // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);
 
-      // Then the project keeps github/webhook-forward as its event source.
+      // Then the project keeps gh/webhook-forward as its event source.
       expect(
         config.projects['sample']!.issueAssistant.eventSource,
-        IssueAssistantEventSourceKind.githubWebhookForward,
+        IssueAssistantEventSourceKind.ghWebhookForward,
       );
 
       // And the GitHub provider remains valid for that project.
@@ -389,13 +393,13 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Reject github/webhook-forward for non-GitHub providers
-    ///   Given a Gitea project config that opts into github/webhook-forward
+    /// Scenario: Reject gh/webhook-forward for non-GitHub providers
+    ///   Given a Gitea project config that opts into gh/webhook-forward
     ///   When loading the app config from disk
     ///   Then loading fails with a clear provider compatibility error
     /// ```
-    test('Reject github/webhook-forward for non-GitHub providers', () async {
-      // Given a Gitea project config that opts into github/webhook-forward.
+    test('Reject gh/webhook-forward for non-GitHub providers', () async {
+      // Given a Gitea project config that opts into gh/webhook-forward.
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-webhook-forward-gitea-',
       );
@@ -407,7 +411,7 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: github/webhook-forward
+      eventSource: gh/webhook-forward
 ''');
 
       // When loading the app config from disk.
@@ -420,7 +424,7 @@ projects:
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('github/webhook-forward requires provider: github'),
+            contains('gh/webhook-forward requires provider: github'),
           ),
         ),
       );

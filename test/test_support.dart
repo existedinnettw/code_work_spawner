@@ -445,6 +445,7 @@ Future<void> writeWebhookForwardGhScript({
   required String repo,
   required Map<String, Object?> issue,
   required List<Map<String, Object?>> comments,
+  List<Map<String, Object?>> issueListResponse = const [],
   File? ghLog,
   File? postedBodyFile,
   String? viewerLogin,
@@ -456,6 +457,19 @@ Future<void> writeWebhookForwardGhScript({
     'comment': comments.last,
     'repository': {'full_name': repo},
   };
+  final searchItems = issueListResponse
+      .map(
+        (searchIssue) => <String, Object?>{
+          ...searchIssue,
+          'repository_url': 'https://api.github.com/repos/$repo',
+        },
+      )
+      .toList(growable: false);
+  final searchResponse = jsonEncode({
+    'total_count': searchItems.length,
+    'incomplete_results': false,
+    'items': searchItems,
+  });
 
   final buffer = StringBuffer()
     ..writeln('#!/usr/bin/env bash')
@@ -472,6 +486,14 @@ Future<void> writeWebhookForwardGhScript({
   buffer
     ..writeln("  cat <<'JSON'")
     ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(searchResponse)
     ..writeln('JSON')
     ..writeln('  exit 0')
     ..writeln('fi');

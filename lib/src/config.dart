@@ -133,7 +133,7 @@ class AppConfig {
       defaults: AppConfigDefaultsDocument(
         issueAssistant: IssueAssistantConfigDocument(
           enabled: true,
-          eventSource: IssueAssistantEventSourceKind.polling,
+          eventSource: IssueAssistantEventSourceKind.ghPolling,
           pollInterval: '30s',
           maxConcurrentIssues: 3,
           mentionTriggers: const ['@codex', '@helper'],
@@ -191,14 +191,37 @@ class ProjectConfig {
     }
 
     final provider = document.provider ?? IssueTrackerProvider.github;
-    final issueAssistant = defaultAssistant.merge(document.issueAssistant);
-    if (issueAssistant.eventSource ==
-            IssueAssistantEventSourceKind.githubWebhookForward &&
-        provider != IssueTrackerProvider.github) {
-      throw FormatException(
-        'projects.$key.issueAssistant.eventSource '
-        'github/webhook-forward requires provider: github.',
+    var issueAssistant = defaultAssistant.merge(document.issueAssistant);
+    if (document.issueAssistant?.eventSource == null &&
+        _isPollingEventSource(issueAssistant.eventSource)) {
+      issueAssistant = issueAssistant.copyWith(
+        eventSource: provider == IssueTrackerProvider.github
+            ? IssueAssistantEventSourceKind.ghPolling
+            : IssueAssistantEventSourceKind.teaPolling,
       );
+    }
+    switch (issueAssistant.eventSource) {
+      case IssueAssistantEventSourceKind.ghPolling:
+      case IssueAssistantEventSourceKind.ghWebhookForward:
+        if (provider != IssueTrackerProvider.github) {
+          throw FormatException(
+            'projects.$key.issueAssistant.eventSource '
+            '${_eventSourceConfigValue(issueAssistant.eventSource)} '
+            'requires provider: github.',
+          );
+        }
+      case IssueAssistantEventSourceKind.teaPolling:
+        if (provider != IssueTrackerProvider.gitea) {
+          throw FormatException(
+            'projects.$key.issueAssistant.eventSource tea/polling '
+            'requires provider: gitea.',
+          );
+        }
+      case IssueAssistantEventSourceKind.teaGosmee:
+        throw FormatException(
+          'projects.$key.issueAssistant.eventSource tea/gosmee '
+          'is not implemented yet.',
+        );
     }
 
     return ProjectConfig(
@@ -268,6 +291,23 @@ class IssueAssistantConfig {
     return const _IssueAssistantConfigResolver().resolve(
       base: this,
       overlay: overlay,
+    );
+  }
+
+  IssueAssistantConfig copyWith({IssueAssistantEventSourceKind? eventSource}) {
+    return IssueAssistantConfig(
+      enabled: enabled,
+      eventSource: eventSource ?? this.eventSource,
+      pollInterval: pollInterval,
+      maxConcurrentIssues: maxConcurrentIssues,
+      mentionTriggers: mentionTriggers,
+      prompt: prompt,
+      responders: responders,
+      capabilities: capabilities,
+      notifications: notifications,
+      commentTag: commentTag,
+      commentPrefixTemplate: commentPrefixTemplate,
+      commentFooterTemplate: commentFooterTemplate,
     );
   }
 }
@@ -367,7 +407,7 @@ class _IssueAssistantConfigResolver {
       eventSource:
           overlay?.eventSource ??
           base?.eventSource ??
-          IssueAssistantEventSourceKind.polling,
+          _defaultEventSourceForProvider(base),
       pollInterval: overlay?.pollInterval != null
           ? _parseDuration(overlay!.pollInterval!)
           : base?.pollInterval ?? const Duration(seconds: 30),
@@ -408,6 +448,30 @@ class _IssueAssistantConfigResolver {
           defaultCommentFooterTemplate,
     );
   }
+
+  IssueAssistantEventSourceKind _defaultEventSourceForProvider(
+    IssueAssistantConfig? base,
+  ) {
+    return base?.eventSource ?? IssueAssistantEventSourceKind.ghPolling;
+  }
+}
+
+String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
+  return switch (value) {
+    IssueAssistantEventSourceKind.ghPolling => 'gh/polling',
+    IssueAssistantEventSourceKind.teaPolling => 'tea/polling',
+    IssueAssistantEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
+    IssueAssistantEventSourceKind.teaGosmee => 'tea/gosmee',
+  };
+}
+
+bool _isPollingEventSource(IssueAssistantEventSourceKind value) {
+  return switch (value) {
+    IssueAssistantEventSourceKind.ghPolling => true,
+    IssueAssistantEventSourceKind.teaPolling => true,
+    IssueAssistantEventSourceKind.ghWebhookForward => false,
+    IssueAssistantEventSourceKind.teaGosmee => false,
+  };
 }
 
 String renderTemplate(String template, Map<String, String> values) {
@@ -629,7 +693,7 @@ ${_YamlEmitter().write({'defaults': defaultsSection})}
 
     # capabilities: ["planning", "bug_verification"]
     # commentTag: code-work-spawner
-    # eventSource: polling
+    # eventSource: gh/polling
     # commentPrefixTemplate: |
 ${_commentBlock(defaultCommentPrefixTemplate, indent: '    #   ')}
     # commentFooterTemplate: |
@@ -658,7 +722,7 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
-    #   eventSource: github/webhook-forward
+    #   eventSource: gh/webhook-forward
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

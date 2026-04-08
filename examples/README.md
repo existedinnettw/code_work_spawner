@@ -6,11 +6,13 @@ Project entries can override `issueAssistant` fields when a repo needs a
 different prompt, mention triggers, responder chain, notification list, or
 event source.
 
-`issueAssistant.eventSource` defaults to `polling`. GitHub projects can switch
-their long-running runtime to `github/webhook-forward`, which starts
-`gh webhook forward` for `issues` and `issue_comment` events. `--once` still
-uses a single polling reconciliation cycle so existing backlog handling keeps
-working.
+GitHub projects default to `gh/polling`, and Gitea projects default to
+`tea/polling`. GitHub projects can switch their long-running runtime to
+`gh/webhook-forward`, which starts
+`gh webhook forward` for `issues` and `issue_comment` events while keeping
+periodic polling reconciliation for startup sync and missed-event recovery.
+`--once` still uses a single polling reconciliation cycle so existing backlog
+handling keeps working.
 
 Generated comments include both a visible prefix and footer by default so it is
 clear the reply came from automation even when `gh` or `tea` is authenticated
