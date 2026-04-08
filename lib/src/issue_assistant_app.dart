@@ -1,26 +1,25 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
 import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
+import 'issue_event_source.dart';
 import 'issue_tracker_client.dart';
 import 'notifier.dart';
 import 'workspace_manager.dart';
 
 class IssueAssistantApp {
   static final Logger _logger = Logger('code_work_spawner.app');
-  static const Duration _pollCoalescingWindow = Duration(seconds: 2);
 
   IssueAssistantApp._({
     required this.config,
     required this.database,
     required this.issueTrackerClient,
+    required this.issueEventSource,
     required this.responderRunner,
     required this.workspaceManager,
     required this.notifierRegistryFactory,
@@ -29,16 +28,11 @@ class IssueAssistantApp {
   final AppConfig config;
   final AppDatabase database;
   final IssueTrackerClient issueTrackerClient;
+  final IssueEventSource issueEventSource;
   final CliResponderRunner responderRunner;
   final WorkspaceManager workspaceManager;
   final NotifierRegistry Function(ProjectConfig project)
   notifierRegistryFactory;
-  final Map<String, _ProjectPollState> _projectPollStates = {};
-  final Set<Future<void>> _activePolls = <Future<void>>{};
-  Timer? _schedulerTimer;
-  Completer<void>? _runCompleter;
-  bool _isClosing = false;
-  bool _isClosed = false;
 
   static Future<IssueAssistantApp> open({
     required AppConfig config,
@@ -47,12 +41,18 @@ class IssueAssistantApp {
     String teaCommand = 'tea',
   }) async {
     final database = AppDatabase.open(databasePath);
+    final issueTrackerClient = IssueTrackerClient(
+      ghCommand: ghCommand,
+      teaCommand: teaCommand,
+    );
     return IssueAssistantApp._(
       config: config,
       database: database,
-      issueTrackerClient: IssueTrackerClient(
-        ghCommand: ghCommand,
-        teaCommand: teaCommand,
+      issueTrackerClient: issueTrackerClient,
+      issueEventSource: PollingIssueEventSource(
+        database: database,
+        issueTrackerClient: issueTrackerClient,
+        logger: _logger,
       ),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
@@ -64,13 +64,6 @@ class IssueAssistantApp {
   }
 
   Future<void> run() async {
-    if (_isClosed) {
-      throw StateError('IssueAssistantApp is already closed.');
-    }
-    if (_runCompleter != null) {
-      return _runCompleter!.future;
-    }
-
     final enabledProjects = config.projects.values
         .where((project) => project.issueAssistant.enabled)
         .toList(growable: false);
@@ -78,28 +71,13 @@ class IssueAssistantApp {
       _log('no enabled projects configured');
       return;
     }
-
-    final completer = Completer<void>();
-    _runCompleter = completer;
-
-    final now = DateTime.now();
-    for (final project in enabledProjects) {
-      _projectPollStates.putIfAbsent(
-        project.key,
-        () => _ProjectPollState(project: project, nextDueAt: now),
-      );
-    }
-    unawaited(_triggerDueProjectPolls(source: 'startup'));
-
-    try {
-      await completer.future;
-    } finally {
-      _cancelScheduler();
-    }
+    await issueEventSource.run(
+      projects: enabledProjects,
+      onBatch: _processBatch,
+    );
   }
 
   Future<void> runOnce() async {
-    _log('starting poll cycle projects=${config.projects.length}');
     final enabledProjects = <ProjectConfig>[];
     for (final project in config.projects.values) {
       if (!project.issueAssistant.enabled) {
@@ -112,232 +90,23 @@ class IssueAssistantApp {
       _log('no enabled projects configured');
       return;
     }
-    await _pollProjects(enabledProjects);
-    _log('poll cycle completed');
-  }
-
-  Future<void> close() async {
-    if (_isClosed || _isClosing) {
-      return;
-    }
-
-    _isClosing = true;
-    _cancelScheduler();
-    _completeRunIfPending();
-    await Future.wait(_activePolls.toList(growable: false));
-    await database.close();
-    _isClosed = true;
-    _isClosing = false;
-  }
-
-  Future<void> _triggerDueProjectPolls({required String source}) async {
-    if (_isClosing || _isClosed) {
-      return;
-    }
-
-    final now = DateTime.now();
-    final dueStates = _projectPollStates.values
-        .where((state) => !state.isRunning && !state.nextDueAt.isAfter(now))
-        .toList(growable: false);
-    if (dueStates.isEmpty) {
-      _scheduleNextPoll();
-      return;
-    }
-
-    late final Future<void> pollFuture;
-    pollFuture = () async {
-      for (final state in dueStates) {
-        state.isRunning = true;
-      }
-      final stopwatch = Stopwatch()..start();
-      final projects = dueStates
-          .map((state) => state.project)
-          .toList(growable: false);
-      _log(
-        'poll tick source=$source projects=${projects.map((p) => p.key).join(",")}',
-      );
-      try {
-        await _pollProjects(projects);
-        stopwatch.stop();
-        final batchCompletedAt = DateTime.now();
-        for (final state in dueStates) {
-          while (!state.nextDueAt.isAfter(batchCompletedAt)) {
-            state.nextDueAt = state.nextDueAt.add(
-              state.project.issueAssistant.pollInterval,
-            );
-          }
-        }
-        _log(
-          'poll tick source=$source projects=${projects.map((p) => p.key).join(",")} '
-          'duration_ms=${stopwatch.elapsedMilliseconds}',
-        );
-      } catch (error, stackTrace) {
-        stopwatch.stop();
-        _logError(
-          'poll tick source=$source projects=${projects.map((p) => p.key).join(",")} '
-          'duration_ms=${stopwatch.elapsedMilliseconds} error=$error',
-        );
-        if (_runCompleter != null) {
-          _logError(
-            'poll tick source=$source will_retry=true '
-            'next_run=scheduled stack_trace=$stackTrace',
-          );
-        }
-      } finally {
-        for (final state in dueStates) {
-          state.isRunning = false;
-        }
-        _activePolls.remove(pollFuture);
-        _scheduleNextPoll();
-      }
-    }();
-
-    _activePolls.add(pollFuture);
-    await pollFuture;
-  }
-
-  void _cancelScheduler() {
-    _schedulerTimer?.cancel();
-    _schedulerTimer = null;
-  }
-
-  void _scheduleNextPoll() {
-    if (_isClosing || _isClosed || _runCompleter == null) {
-      return;
-    }
-    _cancelScheduler();
-
-    DateTime? nextDueAt;
-    for (final state in _projectPollStates.values) {
-      if (state.isRunning) {
-        continue;
-      }
-      if (nextDueAt == null || state.nextDueAt.isBefore(nextDueAt)) {
-        nextDueAt = state.nextDueAt;
-      }
-    }
-    if (nextDueAt == null) {
-      return;
-    }
-
-    final scheduledAt = nextDueAt.add(_pollCoalescingWindow);
-    final delay = scheduledAt.difference(DateTime.now());
-    _schedulerTimer = Timer(
-      delay.isNegative ? Duration.zero : delay,
-      () => unawaited(_triggerDueProjectPolls(source: 'interval')),
+    await issueEventSource.runOnce(
+      projects: enabledProjects,
+      onBatch: _processBatch,
     );
   }
 
-  void _completeRunIfPending() {
-    final completer = _runCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
-    }
+  Future<void> close() async {
+    await issueEventSource.close();
+    await database.close();
   }
 
-  Future<void> _pollProjects(List<ProjectConfig> projects) async {
-    final pollRunIds = <String, int>{};
-    final projectsByRepo = <String, ProjectConfig>{
-      for (final project in projects) _projectRepoKey(project): project,
-    };
-    final sinceByProject = <String, DateTime?>{};
-    final latestSeenByProject = <String, DateTime?>{};
-
-    for (final project in projects) {
-      pollRunIds[project.key] = await database.startPollRun(project.key);
-      final repoDirectory = Directory(project.path);
-      final repoExists = await repoDirectory.exists();
-      final projectState = await database.findProjectState(project.key);
-      final since = projectState?.lastSeenUpdatedAt == null
-          ? null
-          : DateTime.parse(projectState!.lastSeenUpdatedAt!);
-      sinceByProject[project.key] = since;
-      latestSeenByProject[project.key] = since;
-      _log(
-        'poll project=${project.key} repo=${project.repo} '
-        'path=${project.path} path_exists=$repoExists '
-        'since=${since?.toUtc().toIso8601String() ?? "initial"}',
-      );
-    }
-
-    try {
-      final issuesByProject = <String, List<GitHubIssueSummary>>{
-        for (final project in projects) project.key: <GitHubIssueSummary>[],
-      };
-      for (final provider in IssueTrackerProvider.values) {
-        final providerProjects = projects
-            .where((project) => project.provider == provider)
-            .toList(growable: false);
-        if (providerProjects.isEmpty) {
-          continue;
-        }
-        final providerSince = providerProjects
-            .map((project) => sinceByProject[project.key])
-            .whereType<DateTime>()
-            .fold<DateTime?>(null, (current, next) {
-              if (current == null || next.isBefore(current)) {
-                return next;
-              }
-              return current;
-            });
-
-        final issues = await issueTrackerClient.fetchUpdatedIssuesForRepos(
-          provider: provider,
-          repos: providerProjects.map((project) => project.repoSlug),
-          since: providerSince,
-        );
-        for (final issue in issues) {
-          final project =
-              projectsByRepo[_providerRepoKey(provider, issue.repoSlug)];
-          if (project == null) {
-            continue;
-          }
-          final since = sinceByProject[project.key];
-          if (since != null && !issue.updatedAt.isAfter(since)) {
-            continue;
-          }
-          issuesByProject[project.key]!.add(issue);
-          final latestSeen = latestSeenByProject[project.key];
-          if (latestSeen == null || issue.updatedAt.isAfter(latestSeen)) {
-            latestSeenByProject[project.key] = issue.updatedAt;
-          }
-        }
-      }
-
-      for (final project in projects) {
-        final projectIssues = issuesByProject[project.key]!;
-        _log('project=${project.key} fetched_issues=${projectIssues.length}');
-        _log(
-          'project=${project.key} issue_queue=${projectIssues.length} '
-          'max_concurrent=${project.issueAssistant.maxConcurrentIssues}',
-        );
-        await _processIssuesConcurrently(project, projectIssues);
-
-        await database.upsertProjectState(
-          projectKey: project.key,
-          repo: project.repo,
-          lastSeenUpdatedAt: latestSeenByProject[project.key],
-        );
-        await database.finishPollRun(
-          pollRunId: pollRunIds.remove(project.key)!,
-          success: true,
-        );
-        _log(
-          'poll project=${project.key} completed latest_seen='
-          '${latestSeenByProject[project.key]?.toUtc().toIso8601String() ?? "unchanged"}',
-        );
-      }
-    } catch (error) {
-      for (final entry in pollRunIds.entries) {
-        await database.finishPollRun(
-          pollRunId: entry.value,
-          success: false,
-          error: error.toString(),
-        );
-        _log('poll project=${entry.key} failed error=$error');
-      }
-      rethrow;
-    }
+  Future<void> _processBatch(IssueEventBatch batch) {
+    _log(
+      'project=${batch.project.key} tracker_source=${batch.sourceKind} '
+      'fetched_issues=${batch.issues.length}',
+    );
+    return _processIssuesConcurrently(batch.project, batch.issues);
   }
 
   Future<void> _processIssuesConcurrently(
@@ -796,23 +565,4 @@ class IssueAssistantApp {
       _log('responder=$responderId issue=$issueKey stream=stderr\n$stderr');
     }
   }
-
-  String _projectRepoKey(ProjectConfig project) {
-    return _providerRepoKey(project.provider, project.repoSlug);
-  }
-
-  String _providerRepoKey(
-    IssueTrackerProvider provider,
-    RepositorySlug repoSlug,
-  ) {
-    return '${provider.name}:${repoSlug.fullName}';
-  }
-}
-
-class _ProjectPollState {
-  _ProjectPollState({required this.project, required this.nextDueAt});
-
-  final ProjectConfig project;
-  DateTime nextDueAt;
-  bool isRunning = false;
 }

@@ -2,15 +2,17 @@
 
 Repository issue thread assistant with an Agent Orchestrator style YAML config.
 
-It polls configured GitHub or Gitea repositories with `gh` or `tea`, reads
-issue threads, and uses CLI responders such as `codex`, `opencode`, or
-`copilot-cli` to decide when to reply. It supports multi-repo config,
-responder fallback chains, and optional Discord webhook and desktop
-notifications.
+It consumes issue tracker events for configured GitHub or Gitea repositories,
+reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
+`copilot-cli` to decide when to reply. Polling via `gh` and `tea` is the
+currently bundled event source, with the runtime structured so future
+channel-based sources can plug into the same processing pipeline. It supports
+multi-repo config, responder fallback chains, and optional Discord webhook and
+desktop notifications.
 
 ## Highlights
 
-- Poll GitHub and Gitea issues across multiple repositories
+- Consume GitHub and Gitea issue events across multiple repositories
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
 - Send optional Discord or desktop notifications for assistant events
@@ -44,13 +46,13 @@ dart run bin/code_work_spawner.dart init-config --output agent-orchestrator.yaml
 dart run build_runner build --delete-conflicting-outputs
 ```
 
-Single poll cycle:
+Single event-source reconciliation cycle:
 
 ```bash
 dart run bin/code_work_spawner.dart --once
 ```
 
-Long-running poller:
+Long-running tracker runtime:
 
 ```bash
 dart run bin/code_work_spawner.dart
