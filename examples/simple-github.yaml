@@ -7,8 +7,8 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    # Use gh/webhook-forward for long-running runs while keeping --once on polling.
-    # eventSource: gh/webhook-forward
+    # Use gh/gosmee for long-running runs while keeping --once on polling.
+    # eventSource: gh/gosmee
     pollInterval: 30s
     maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
