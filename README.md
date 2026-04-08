@@ -4,16 +4,13 @@ Repository issue thread assistant with an Agent Orchestrator style YAML config.
 
 It consumes issue tracker events for configured GitHub or Gitea repositories,
 reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
-`copilot-cli` to decide when to reply. Polling via `gh` and `tea` plus
-GitHub's `gh webhook forward` channel are the currently bundled event sources.
-It supports
+`copilot-cli` to decide when to reply. It supports
 multi-repo config, responder fallback chains, and optional Discord webhook and
 desktop notifications.
 
 ## Highlights
 
 - Consume GitHub and Gitea issue events across multiple repositories
-- Use `github/webhook-forward` for GitHub issue and comment webhooks during long-running runs
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
 - Send optional Discord or desktop notifications for assistant events
