@@ -93,7 +93,25 @@ projects:
 
       // When the long-running app starts and enough time passes for a retry.
       final runFuture = app.run();
-      await Future<void>.delayed(const Duration(milliseconds: 2600));
+      for (var attempt = 0; attempt < 60; attempt += 1) {
+        final logLines = await ghLog.exists()
+            ? await ghLog.readAsLines()
+            : const <String>[];
+        final retrySearchCount = logLines
+            .where(
+              (line) =>
+                  line ==
+                  'api -X GET search/issues -f q=repo:owner/sample is:issue state:open -f sort=updated -f order=asc -f per_page=100 -f page=1',
+            )
+            .length;
+        final sawRetryLog = logMessages.any(
+          (message) => message.contains('will_retry=true'),
+        );
+        if (retrySearchCount >= 2 && sawRetryLog) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
       await app.close();
       await runFuture;
       await subscription.cancel();
