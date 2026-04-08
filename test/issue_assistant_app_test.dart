@@ -1720,6 +1720,98 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Log webhook forward stderr at error level
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And a gh script that writes a webhook creation failure to stderr while forwarding
+    ///   And an orchestrator-style config that uses gh/webhook-forward
+    ///   When the long-running app starts and webhook-forward emits that stderr line
+    ///   Then the app logs the webhook-forward stderr message at severe level
+    /// ```
+    test('Log webhook forward stderr at error level', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-webhook-stderr-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And a gh script that writes a webhook creation failure to stderr while forwarding.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      await ghScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\$1" == "webhook" && "\$2" == "forward" ]]; then
+  echo "Error: error creating webhook: HTTP 422: Validation Failed (https://api.github.com/repos/existedinnettw/code_work_spawner/hooks)" >&2
+  while true; do
+    sleep 60
+  done
+fi
+
+if [[ "\$1" == "api" && "\$2" == "user" ]]; then
+  cat <<'JSON'
+${jsonEncode({'login': 'octocat'})}
+JSON
+  exit 0
+fi
+
+echo "unexpected gh args: \$*" >&2
+exit 1
+''');
+      await Process.run('chmod', ['+x', ghScript.path]);
+
+      // And an orchestrator-style config that uses gh/webhook-forward.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+projects:
+  sample:
+    provider: github
+    repo: owner/sample
+    path: ${repoDir.path}
+    issueAssistant:
+      eventSource: gh/webhook-forward
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+      final records = <LogRecord>[];
+      final previousLevel = Logger.root.level;
+      Logger.root.level = Level.ALL;
+      final subscription = Logger.root.onRecord.listen(records.add);
+
+      // When the long-running app starts and webhook-forward emits that stderr line.
+      final runFuture = app.run();
+      for (var attempt = 0; attempt < 50; attempt += 1) {
+        if (records.any(
+          (record) => record.message.contains('error creating webhook'),
+        )) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      await app.close();
+      await runFuture;
+      await subscription.cancel();
+      Logger.root.level = previousLevel;
+
+      // Then the app logs the webhook-forward stderr message at severe level.
+      expect(
+        records.any(
+          (record) =>
+              record.level == Level.SEVERE &&
+              record.message.contains(
+                'stderr=Error: error creating webhook: HTTP 422: Validation Failed',
+              ),
+        ),
+        isTrue,
+      );
+    });
+
+    /// ```gherkin
     /// Scenario: Reconcile a missed GitHub webhook event through polling
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And a gh script that starts webhook forwarding without delivering an event
