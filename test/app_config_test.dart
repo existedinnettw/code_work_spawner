@@ -357,6 +357,78 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load gh/gosmee as the issue event source
+    ///   Given a GitHub project config that opts into gh/gosmee
+    ///   When loading the app config from disk
+    ///   Then the project keeps gh/gosmee as its event source
+    ///   And the GitHub provider remains valid for that project
+    /// ```
+    test('Load gh/gosmee as the issue event source', () async {
+      // Given a GitHub project config that opts into gh/gosmee.
+      final tempDir = await Directory.systemTemp.createTemp('cws-gh-gosmee-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: github
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource: gh/gosmee
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps gh/gosmee as its event source.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource,
+        IssueAssistantEventSourceKind.ghGosmee,
+      );
+
+      // And the GitHub provider remains valid for that project.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
+    });
+
+    /// ```gherkin
+    /// Scenario: Reject gh/gosmee for non-GitHub providers
+    ///   Given a Gitea project config that opts into gh/gosmee
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear provider compatibility error
+    /// ```
+    test('Reject gh/gosmee for non-GitHub providers', () async {
+      // Given a Gitea project config that opts into gh/gosmee.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-gh-gosmee-gitea-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: gitea
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource: gh/gosmee
+''');
+
+      // When loading the app config from disk.
+      final load = AppConfig.load(configFile.path);
+
+      // Then loading fails with a clear provider compatibility error.
+      await expectLater(
+        load,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('gh/gosmee requires provider: github'),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
     /// Scenario: Load gh/webhook-forward as the issue event source
     ///   Given a GitHub project config that opts into gh/webhook-forward
     ///   When loading the app config from disk

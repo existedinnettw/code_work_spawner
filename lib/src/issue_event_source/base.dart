@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
-import 'config.dart';
-import 'database.dart';
-import 'issue_tracker_client.dart';
+import '../config.dart';
+import '../database.dart';
+import '../issue_tracker_client.dart';
 
 typedef IssueEventBatchHandler = Future<void> Function(IssueEventBatch batch);
 
@@ -103,6 +103,12 @@ class RoutedIssueEventSource implements IssueEventSource {
         yield IssueAssistantEventSourceKind.ghPolling;
       case IssueAssistantEventSourceKind.teaPolling:
         yield IssueAssistantEventSourceKind.teaPolling;
+      case IssueAssistantEventSourceKind.ghGosmee:
+        // Keep reconciliation polling active for startup sync and missed
+        // webhook recovery while gosmee handles low-latency issue/comment
+        // events for GitHub projects.
+        yield IssueAssistantEventSourceKind.ghPolling;
+        yield IssueAssistantEventSourceKind.ghGosmee;
       case IssueAssistantEventSourceKind.ghWebhookForward:
         // Keep reconciliation polling active for startup sync and missed
         // webhook recovery while the forwarded channel handles low-latency

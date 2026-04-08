@@ -7,9 +7,10 @@ import 'package:logging/logging.dart';
 import 'cli_responder.dart';
 import 'config.dart';
 import 'database.dart';
-import 'issue_event_source.dart';
-import 'issue_event_source_gitea_gosmee.dart';
-import 'issue_event_source_github_webhook_forward.dart';
+import 'issue_event_source/base.dart';
+import 'issue_event_source/gitea_gosmee.dart';
+import 'issue_event_source/github_gosmee.dart';
+import 'issue_event_source/github_webhook_forward.dart';
 import 'issue_tracker_client.dart';
 import 'notifier.dart';
 import 'workspace_manager.dart';
@@ -62,6 +63,11 @@ class IssueAssistantApp {
         sources: {
           IssueAssistantEventSourceKind.ghPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.teaPolling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
+            issueTrackerClient: issueTrackerClient,
+            gosmeeCommand: gosmeeCommand,
+            logger: _logger,
+          ),
           IssueAssistantEventSourceKind.ghWebhookForward:
               GitHubWebhookForwardIssueEventSource(
                 issueTrackerClient: issueTrackerClient,

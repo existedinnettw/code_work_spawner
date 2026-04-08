@@ -186,6 +186,8 @@ enum IssueAssistantEventSourceKind {
   ghPolling,
   @JsonValue('tea/polling')
   teaPolling,
+  @JsonValue('gh/gosmee')
+  ghGosmee,
   @JsonValue('gh/webhook-forward')
   ghWebhookForward,
   @JsonValue('tea/gosmee')

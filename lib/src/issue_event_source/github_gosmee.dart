@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
-import 'config.dart';
-import 'issue_event_source.dart';
-import 'issue_tracker_client.dart';
+import '../config.dart';
+import '../issue_tracker_client.dart';
+import 'base.dart';
 
-class GiteaGosmeeIssueEventSource implements IssueEventSource {
-  GiteaGosmeeIssueEventSource({
+class GitHubGosmeeIssueEventSource implements IssueEventSource {
+  GitHubGosmeeIssueEventSource({
     required this.issueTrackerClient,
     required this.gosmeeCommand,
     required Logger logger,
@@ -21,7 +21,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
   final IssueTrackerClient issueTrackerClient;
   final String gosmeeCommand;
   final Logger _logger;
-  final Map<String, _QueuedGiteaIssue> _queuedIssues = {};
+  final Map<String, _QueuedGitHubIssue> _queuedIssues = {};
   final Set<Future<void>> _activeDispatches = <Future<void>>{};
   final Map<String, Process> _gosmeeProcesses = {};
   final Map<String, int> _webhookIdsByProject = {};
@@ -45,10 +45,10 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
       return _runCompleter!.future;
     }
 
-    final giteaProjects = projects
-        .where((project) => project.provider == IssueTrackerProvider.gitea)
+    final githubProjects = projects
+        .where((project) => project.provider == IssueTrackerProvider.github)
         .toList(growable: false);
-    if (giteaProjects.isEmpty) {
+    if (githubProjects.isEmpty) {
       return;
     }
 
@@ -57,9 +57,9 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
     final repoToProject = {
-      for (final project in giteaProjects) project.repo: project,
+      for (final project in githubProjects) project.repo: project,
     };
-    for (final project in giteaProjects) {
+    for (final project in githubProjects) {
       _repoSlugsByProject[project.key] = project.repoSlug;
     }
     server.listen(
@@ -71,7 +71,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
         ),
       ),
       onError: (Object error, StackTrace stackTrace) {
-        _logError('gitea/gosmee server error=$error');
+        _logError('github/gosmee server error=$error');
         if (!_isClosing && !completer.isCompleted) {
           completer.completeError(error, stackTrace);
         }
@@ -79,10 +79,10 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     );
 
     final localUrl =
-        'http://${server.address.address}:${server.port}/gitea/webhooks';
-    for (final project in giteaProjects) {
+        'http://${server.address.address}:${server.port}/github/webhooks';
+    for (final project in githubProjects) {
       final publicUrl = await _createGosmeeChannelUrl(localUrl);
-      final webhookId = await issueTrackerClient.createGiteaIssueWebhook(
+      final webhookId = await issueTrackerClient.createGitHubIssueWebhook(
         repo: project.repoSlug,
         url: publicUrl,
       );
@@ -107,7 +107,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
         process.exitCode.then((exitCode) {
           _gosmeeProcesses.remove(project.key);
           _log(
-            'gitea/gosmee process project=${project.key} exit_code=$exitCode',
+            'github/gosmee process project=${project.key} exit_code=$exitCode',
           );
           if (!_isClosing && !completer.isCompleted) {
             completer.completeError(
@@ -134,7 +134,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     required IssueEventBatchHandler onBatch,
   }) async {
     throw UnsupportedError(
-      'gitea/gosmee does not support runOnce; use polling instead.',
+      'github/gosmee does not support runOnce; use polling instead.',
     );
   }
 
@@ -170,13 +170,13 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     _webhookIdsByProject.clear();
     for (final entry in webhookIds.entries) {
       try {
-        await issueTrackerClient.deleteGiteaWebhook(
+        await issueTrackerClient.deleteGitHubWebhook(
           repo: _repoSlugsByProject[entry.key]!,
           webhookId: entry.value,
         );
       } catch (error) {
         _logError(
-          'gitea/gosmee delete webhook project=${entry.key} '
+          'github/gosmee delete webhook project=${entry.key} '
           'webhook_id=${entry.value} error=$error',
         );
       }
@@ -223,7 +223,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
           issueNode,
         );
         if (issue.state == 'open') {
-          _queuedIssues['${project.key}#${issue.number}'] = _QueuedGiteaIssue(
+          _queuedIssues['${project.key}#${issue.number}'] = _QueuedGitHubIssue(
             project: project,
             issue: issue,
             onBatch: onBatch,
@@ -235,7 +235,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
       request.response.statusCode = HttpStatus.accepted;
       await request.response.close();
     } catch (error) {
-      _logError('gitea/gosmee payload error=$error');
+      _logError('github/gosmee payload error=$error');
       request.response
         ..statusCode = HttpStatus.badRequest
         ..write('Invalid webhook payload.');
@@ -259,33 +259,36 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
         result.exitCode,
       );
     }
+
     final stdoutText = result.stdout.toString().trim();
     if (stdoutText.isEmpty) {
       throw const FormatException('gosmee did not print a public URL.');
     }
+
     try {
-      final decodedJson = jsonDecode(stdoutText);
-      if (decodedJson is Map<String, dynamic>) {
-        final publicUrl = decodedJson['url']?.toString().trim();
-        if (publicUrl == null || publicUrl.isEmpty) {
+      final decoded = jsonDecode(stdoutText);
+      if (decoded is Map<String, dynamic>) {
+        final url = decoded['url']?.toString().trim();
+        if (url == null || url.isEmpty) {
           throw const FormatException(
             'gosmee JSON output did not contain a valid public URL.',
           );
         }
-        return publicUrl;
+        return url;
       }
-      if (decodedJson is String) {
-        final publicUrl = decodedJson.trim();
-        if (publicUrl.isEmpty) {
+      if (decoded is String) {
+        final url = decoded.trim();
+        if (url.isEmpty) {
           throw const FormatException('gosmee did not print a public URL.');
         }
-        return publicUrl;
+        return url;
       }
     } on FormatException {
       if (Uri.tryParse(stdoutText)?.hasScheme ?? false) {
         return stdoutText;
       }
     }
+
     throw const FormatException('gosmee did not print a valid public URL.');
   }
 
@@ -303,12 +306,12 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
 
     final queuedIssues = _queuedIssues.values.toList(growable: false);
     _queuedIssues.clear();
-    final groupedIssues = <String, _QueuedGiteaBatch>{};
+    final groupedIssues = <String, _QueuedGitHubBatch>{};
     for (final queuedIssue in queuedIssues) {
       groupedIssues.update(
         queuedIssue.project.key,
         (existing) => existing.add(queuedIssue.issue),
-        ifAbsent: () => _QueuedGiteaBatch(
+        ifAbsent: () => _QueuedGitHubBatch(
           project: queuedIssue.project,
           onBatch: queuedIssue.onBatch,
           issues: [queuedIssue.issue],
@@ -323,7 +326,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
           (left, right) => left.updatedAt.compareTo(right.updatedAt),
         );
         _log(
-          'gitea/gosmee project=${batch.project.key} '
+          'github/gosmee project=${batch.project.key} '
           'fetched_issues=${batch.issues.length}',
         );
         await batch.onBatch(
@@ -331,12 +334,11 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
             project: batch.project,
             issues: batch.issues,
             latestSeenUpdatedAt: batch.issues.last.updatedAt,
-            sourceKind: 'gitea/gosmee',
+            sourceKind: 'github/gosmee',
           ),
         );
       }
     }();
-
     _activeDispatches.add(dispatchFuture);
     try {
       await dispatchFuture;
@@ -350,25 +352,23 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     required Stream<List<int>> stream,
     required String level,
   }) {
-    utf8.decoder
-        .bind(stream)
-        .transform(const LineSplitter())
-        .listen(
-          (line) => _log('gitea/gosmee project=${project.key} $level=$line'),
-        );
+    utf8.decoder.bind(stream).transform(const LineSplitter()).listen((line) {
+      final message = 'github/gosmee project=${project.key} $level=$line';
+      if (level == 'stderr') {
+        _logger.severe(message);
+      } else {
+        _logger.info(message);
+      }
+    });
   }
 
-  void _log(String message) {
-    _logger.info(message);
-  }
+  void _log(String message) => _logger.info(message);
 
-  void _logError(String message) {
-    _logger.warning(message);
-  }
+  void _logError(String message) => _logger.severe(message);
 }
 
-class _QueuedGiteaIssue {
-  _QueuedGiteaIssue({
+class _QueuedGitHubIssue {
+  _QueuedGitHubIssue({
     required this.project,
     required this.issue,
     required this.onBatch,
@@ -379,18 +379,19 @@ class _QueuedGiteaIssue {
   final IssueEventBatchHandler onBatch;
 }
 
-class _QueuedGiteaBatch {
-  _QueuedGiteaBatch({
+class _QueuedGitHubBatch {
+  _QueuedGitHubBatch({
     required this.project,
     required this.onBatch,
-    required this.issues,
-  });
+    required List<GitHubIssueSummary> issues,
+  }) : issues = List<GitHubIssueSummary>.from(issues);
 
   final ProjectConfig project;
   final IssueEventBatchHandler onBatch;
   final List<GitHubIssueSummary> issues;
 
-  _QueuedGiteaBatch add(GitHubIssueSummary issue) {
+  _QueuedGitHubBatch add(GitHubIssueSummary issue) {
+    issues.removeWhere((existing) => existing.number == issue.number);
     issues.add(issue);
     return this;
   }

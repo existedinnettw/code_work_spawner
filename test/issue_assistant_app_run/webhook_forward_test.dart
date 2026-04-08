@@ -7,7 +7,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import 'test_support.dart';
+import '../test_support.dart';
 
 void registerIssueAssistantAppRunWebhookForwardTests() {
   /// ```gherkin

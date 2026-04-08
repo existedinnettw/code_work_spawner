@@ -147,6 +147,48 @@ class IssueTrackerClient {
     return _readInt(json, 'id');
   }
 
+  Future<int> createGitHubIssueWebhook({
+    required RepositorySlug repo,
+    required String url,
+  }) async {
+    final json = await _runGhJson([
+      'api',
+      '-X',
+      'POST',
+      _buildApiPath(repo, ['hooks']),
+      '-f',
+      'name=web',
+      '-f',
+      'active=true',
+      '-f',
+      'events[]=issues',
+      '-f',
+      'events[]=issue_comment',
+      '-f',
+      'config[url]=$url',
+      '-f',
+      'config[content_type]=json',
+    ]);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException(
+        'gh api webhook create returned an unexpected response.',
+      );
+    }
+    return _readInt(json, 'id');
+  }
+
+  Future<void> deleteGitHubWebhook({
+    required RepositorySlug repo,
+    required int webhookId,
+  }) async {
+    await _runGhJson([
+      'api',
+      '-X',
+      'DELETE',
+      _buildApiPath(repo, ['hooks', '$webhookId']),
+    ]);
+  }
+
   Future<void> deleteGiteaWebhook({
     required RepositorySlug repo,
     required int webhookId,

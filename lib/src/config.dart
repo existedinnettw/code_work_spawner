@@ -202,6 +202,7 @@ class ProjectConfig {
     }
     switch (issueAssistant.eventSource) {
       case IssueAssistantEventSourceKind.ghPolling:
+      case IssueAssistantEventSourceKind.ghGosmee:
       case IssueAssistantEventSourceKind.ghWebhookForward:
         if (provider != IssueTrackerProvider.github) {
           throw FormatException(
@@ -462,6 +463,7 @@ String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => 'gh/polling',
     IssueAssistantEventSourceKind.teaPolling => 'tea/polling',
+    IssueAssistantEventSourceKind.ghGosmee => 'gh/gosmee',
     IssueAssistantEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
     IssueAssistantEventSourceKind.teaGosmee => 'tea/gosmee',
   };
@@ -471,6 +473,7 @@ bool _isPollingEventSource(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => true,
     IssueAssistantEventSourceKind.teaPolling => true,
+    IssueAssistantEventSourceKind.ghGosmee => false,
     IssueAssistantEventSourceKind.ghWebhookForward => false,
     IssueAssistantEventSourceKind.teaGosmee => false,
   };
@@ -724,7 +727,7 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
-    #   eventSource: gh/webhook-forward
+    #   eventSource: gh/gosmee
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

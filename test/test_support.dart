@@ -570,6 +570,99 @@ Future<void> writeWebhookForwardGhScript({
   await Process.run('chmod', ['+x', ghScript.path]);
 }
 
+Future<void> writeGitHubGosmeeGhScript({
+  required File ghScript,
+  required String repo,
+  required int webhookId,
+  required int issueNumber,
+  required List<Map<String, Object?>> comments,
+  File? ghLog,
+  File? postedBodyFile,
+  String? viewerLogin,
+}) async {
+  final buffer = StringBuffer()
+    ..writeln('#!/usr/bin/env bash')
+    ..writeln('set -euo pipefail');
+
+  if (ghLog != null) {
+    buffer.writeln(
+      r'''printf '%s\n' "$*" >> '''
+      '"${ghLog.path}"',
+    );
+  }
+
+  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
+  buffer
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(
+      'if [[ "\$1" == "api" && "\$4" == '
+      '"repos/$repo/issues/$issueNumber/comments?per_page=100" ]]; then',
+    )
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode(comments))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln('if [[ "\$1" == "api" && "\$4" == "repos/$repo/hooks" ]]; then')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(jsonEncode({'id': webhookId}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(
+      'if [[ "\$1" == "api" && "\$4" == '
+      '"repos/$repo/issues/$issueNumber/comments" ]]; then',
+    )
+    ..writeln(r'''  for arg in "$@"; do''')
+    ..writeln(r'''    :''');
+  if (postedBodyFile != null) {
+    buffer
+      ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
+      ..writeln(
+        r'''      printf '%s' "${arg#body=}" > '''
+        '"${postedBodyFile.path}"',
+      )
+      ..writeln(r'''    fi''');
+  }
+  buffer
+    ..writeln(r'''  done''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(
+      jsonEncode({
+        'id': 703,
+        'html_url': 'https://example.test/comment/703',
+        'body': 'posted',
+      }),
+    )
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(
+      'if [[ "\$1" == "api" && "\$4" == "repos/$repo/hooks/$webhookId" ]]; then',
+    )
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
+    ..writeln('exit 1');
+
+  await ghScript.writeAsString(buffer.toString());
+  await Process.run('chmod', ['+x', ghScript.path]);
+}
+
 Future<void> writeGosmeeForwardScript({
   required File gosmeeScript,
   required String publicUrl,
