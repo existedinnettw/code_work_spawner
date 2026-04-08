@@ -40,43 +40,41 @@ abstract class IssueEventSource {
 }
 
 class RoutedIssueEventSource implements IssueEventSource {
-  RoutedIssueEventSource({
-    required this.pollingSource,
-    required this.githubWebhookForwardSource,
-  });
+  RoutedIssueEventSource({required this.sources});
 
-  final PollingIssueEventSource pollingSource;
-  final GitHubWebhookForwardIssueEventSource githubWebhookForwardSource;
+  final Map<IssueAssistantEventSourceKind, IssueEventSource> sources;
 
   @override
   Future<void> run({
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) async {
-    final pollingProjects = projects
-        .where(
-          (project) =>
-              project.issueAssistant.eventSource ==
-              IssueAssistantEventSourceKind.polling,
-        )
-        .toList(growable: false);
-    final githubWebhookForwardProjects = projects
-        .where(
-          (project) =>
-              project.issueAssistant.eventSource ==
-              IssueAssistantEventSourceKind.githubWebhookForward,
-        )
-        .toList(growable: false);
+    final projectsBySource =
+        <IssueAssistantEventSourceKind, List<ProjectConfig>>{
+          for (final eventSource in sources.keys)
+            eventSource: <ProjectConfig>[],
+        };
+    for (final project in projects) {
+      final projectSource = project.issueAssistant.eventSource;
+      final sourceProjects = projectsBySource[projectSource];
+      if (sourceProjects == null) {
+        throw StateError(
+          'No issue event source registered for ${projectSource.name}.',
+        );
+      }
+      sourceProjects.add(project);
+    }
 
-    await Future.wait([
-      if (pollingProjects.isNotEmpty)
-        pollingSource.run(projects: pollingProjects, onBatch: onBatch),
-      if (githubWebhookForwardProjects.isNotEmpty)
-        githubWebhookForwardSource.run(
-          projects: githubWebhookForwardProjects,
-          onBatch: onBatch,
-        ),
-    ]);
+    await Future.wait(
+      projectsBySource.entries
+          .where((entry) => entry.value.isNotEmpty)
+          .map(
+            (entry) => sources[entry.key]!.run(
+              projects: entry.value,
+              onBatch: onBatch,
+            ),
+          ),
+    );
   }
 
   @override
@@ -84,13 +82,17 @@ class RoutedIssueEventSource implements IssueEventSource {
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) {
-    return pollingSource.runOnce(projects: projects, onBatch: onBatch);
+    return sources[IssueAssistantEventSourceKind.polling]!.runOnce(
+      projects: projects,
+      onBatch: onBatch,
+    );
   }
 
   @override
   Future<void> close() async {
-    await githubWebhookForwardSource.close();
-    await pollingSource.close();
+    for (final source in sources.values) {
+      await source.close();
+    }
   }
 }
 

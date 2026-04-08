@@ -55,11 +55,14 @@ class IssueAssistantApp {
       database: database,
       issueTrackerClient: issueTrackerClient,
       issueEventSource: RoutedIssueEventSource(
-        pollingSource: pollingIssueEventSource,
-        githubWebhookForwardSource: GitHubWebhookForwardIssueEventSource(
-          issueTrackerClient: issueTrackerClient,
-          logger: _logger,
-        ),
+        sources: {
+          IssueAssistantEventSourceKind.polling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.githubWebhookForward:
+              GitHubWebhookForwardIssueEventSource(
+                issueTrackerClient: issueTrackerClient,
+                logger: _logger,
+              ),
+        },
       ),
       responderRunner: CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
