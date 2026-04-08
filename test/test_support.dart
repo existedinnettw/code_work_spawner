@@ -576,10 +576,24 @@ Future<void> writeGitHubGosmeeGhScript({
   required int webhookId,
   required int issueNumber,
   required List<Map<String, Object?>> comments,
+  List<Map<String, Object?>> issueListResponse = const [],
   File? ghLog,
   File? postedBodyFile,
   String? viewerLogin,
 }) async {
+  final searchItems = issueListResponse
+      .map(
+        (issue) => <String, Object?>{
+          ...issue,
+          'repository_url': 'https://api.github.com/repos/$repo',
+        },
+      )
+      .toList(growable: false);
+  final searchResponse = jsonEncode({
+    'total_count': searchItems.length,
+    'incomplete_results': false,
+    'items': searchItems,
+  });
   final buffer = StringBuffer()
     ..writeln('#!/usr/bin/env bash')
     ..writeln('set -euo pipefail');
@@ -595,6 +609,14 @@ Future<void> writeGitHubGosmeeGhScript({
   buffer
     ..writeln("  cat <<'JSON'")
     ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
+    ..writeln('JSON')
+    ..writeln('  exit 0')
+    ..writeln('fi');
+
+  buffer
+    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
+    ..writeln("  cat <<'JSON'")
+    ..writeln(searchResponse)
     ..writeln('JSON')
     ..writeln('  exit 0')
     ..writeln('fi');

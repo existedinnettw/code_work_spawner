@@ -87,7 +87,6 @@ class IssueAssistantConfigDocument {
   const IssueAssistantConfigDocument({
     this.enabled,
     this.eventSource,
-    this.pollInterval,
     this.maxConcurrentIssues,
     this.mentionTriggers,
     this.prompt,
@@ -100,8 +99,7 @@ class IssueAssistantConfigDocument {
   });
 
   final bool? enabled;
-  final IssueAssistantEventSourceKind? eventSource;
-  final String? pollInterval;
+  final IssueAssistantEventSourceDocument? eventSource;
   final int? maxConcurrentIssues;
   final List<String>? mentionTriggers;
   final String? prompt;
@@ -116,6 +114,34 @@ class IssueAssistantConfigDocument {
       _$IssueAssistantConfigDocumentFromJson(json);
 
   Map<String, dynamic> toJson() => _$IssueAssistantConfigDocumentToJson(this);
+}
+
+@JsonSerializable(
+  checked: true,
+  createToJson: true,
+  disallowUnrecognizedKeys: true,
+  explicitToJson: true,
+  includeIfNull: false,
+)
+class IssueAssistantEventSourceDocument {
+  const IssueAssistantEventSourceDocument({
+    this.type,
+    this.pollInterval,
+    this.reconciliation,
+    this.reconcileInterval,
+  });
+
+  final IssueAssistantEventSourceKind? type;
+  final String? pollInterval;
+  final IssueAssistantReconciliationKind? reconciliation;
+  final String? reconcileInterval;
+
+  factory IssueAssistantEventSourceDocument.fromJson(
+    Map<String, dynamic> json,
+  ) => _$IssueAssistantEventSourceDocumentFromJson(json);
+
+  Map<String, dynamic> toJson() =>
+      _$IssueAssistantEventSourceDocumentToJson(this);
 }
 
 @JsonSerializable(
@@ -192,6 +218,13 @@ enum IssueAssistantEventSourceKind {
   ghWebhookForward,
   @JsonValue('tea/gosmee')
   teaGosmee,
+}
+
+enum IssueAssistantReconciliationKind {
+  @JsonValue('startup-only')
+  startupOnly,
+  @JsonValue('continuous')
+  continuous,
 }
 
 @JsonEnum(fieldRename: FieldRename.snake)

@@ -11,6 +11,7 @@ export 'config_schema.dart'
     show
         AssistantCapability,
         IssueAssistantEventSourceKind,
+        IssueAssistantReconciliationKind,
         IssueTrackerProvider,
         NotificationConfigDocument,
         NotificationEvent,
@@ -83,6 +84,7 @@ class AppConfig {
     }
 
     _assertCamelCaseConfigKeys(root);
+    _normalizeLegacyEventSourceConfig(root);
     final document = _parseDocument(root);
     return _fromDocument(path, document);
   }
@@ -133,8 +135,10 @@ class AppConfig {
       defaults: AppConfigDefaultsDocument(
         issueAssistant: IssueAssistantConfigDocument(
           enabled: true,
-          eventSource: IssueAssistantEventSourceKind.ghPolling,
-          pollInterval: '30s',
+          eventSource: IssueAssistantEventSourceDocument(
+            type: IssueAssistantEventSourceKind.ghPolling,
+            pollInterval: '30s',
+          ),
           maxConcurrentIssues: 3,
           mentionTriggers: const ['@codex', '@helper'],
         ),
@@ -192,22 +196,26 @@ class ProjectConfig {
 
     final provider = document.provider ?? IssueTrackerProvider.github;
     var issueAssistant = defaultAssistant.merge(document.issueAssistant);
-    if (document.issueAssistant?.eventSource == null &&
-        _isPollingEventSource(issueAssistant.eventSource)) {
+    if (document.issueAssistant?.eventSource?.type == null &&
+        issueAssistant.eventSource is PollingIssueEventSourceConfig) {
       issueAssistant = issueAssistant.copyWith(
-        eventSource: provider == IssueTrackerProvider.github
-            ? IssueAssistantEventSourceKind.ghPolling
-            : IssueAssistantEventSourceKind.teaPolling,
+        eventSource:
+            (issueAssistant.eventSource as PollingIssueEventSourceConfig)
+                .copyWith(
+                  type: provider == IssueTrackerProvider.github
+                      ? IssueAssistantEventSourceKind.ghPolling
+                      : IssueAssistantEventSourceKind.teaPolling,
+                ),
       );
     }
-    switch (issueAssistant.eventSource) {
+    switch (issueAssistant.eventSource.type) {
       case IssueAssistantEventSourceKind.ghPolling:
       case IssueAssistantEventSourceKind.ghGosmee:
       case IssueAssistantEventSourceKind.ghWebhookForward:
         if (provider != IssueTrackerProvider.github) {
           throw FormatException(
             'projects.$key.issueAssistant.eventSource '
-            '${_eventSourceConfigValue(issueAssistant.eventSource)} '
+            '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
             'requires provider: github.',
           );
         }
@@ -257,7 +265,6 @@ class IssueAssistantConfig {
   IssueAssistantConfig({
     required this.enabled,
     required this.eventSource,
-    required this.pollInterval,
     required this.maxConcurrentIssues,
     required this.mentionTriggers,
     required this.prompt,
@@ -270,8 +277,7 @@ class IssueAssistantConfig {
   });
 
   final bool enabled;
-  final IssueAssistantEventSourceKind eventSource;
-  final Duration pollInterval;
+  final IssueEventSourceConfig eventSource;
   final int maxConcurrentIssues;
   final List<String> mentionTriggers;
   final String prompt;
@@ -297,11 +303,10 @@ class IssueAssistantConfig {
     );
   }
 
-  IssueAssistantConfig copyWith({IssueAssistantEventSourceKind? eventSource}) {
+  IssueAssistantConfig copyWith({IssueEventSourceConfig? eventSource}) {
     return IssueAssistantConfig(
       enabled: enabled,
       eventSource: eventSource ?? this.eventSource,
-      pollInterval: pollInterval,
       maxConcurrentIssues: maxConcurrentIssues,
       mentionTriggers: mentionTriggers,
       prompt: prompt,
@@ -311,6 +316,56 @@ class IssueAssistantConfig {
       commentTag: commentTag,
       commentPrefixTemplate: commentPrefixTemplate,
       commentFooterTemplate: commentFooterTemplate,
+    );
+  }
+}
+
+sealed class IssueEventSourceConfig {
+  const IssueEventSourceConfig({required this.type});
+
+  final IssueAssistantEventSourceKind type;
+
+  bool get usesChannelEventSource => !_isPollingEventSource(type);
+}
+
+class PollingIssueEventSourceConfig extends IssueEventSourceConfig {
+  const PollingIssueEventSourceConfig({
+    required super.type,
+    required this.pollInterval,
+  });
+
+  final Duration pollInterval;
+
+  PollingIssueEventSourceConfig copyWith({
+    IssueAssistantEventSourceKind? type,
+    Duration? pollInterval,
+  }) {
+    return PollingIssueEventSourceConfig(
+      type: type ?? this.type,
+      pollInterval: pollInterval ?? this.pollInterval,
+    );
+  }
+}
+
+class ChannelIssueEventSourceConfig extends IssueEventSourceConfig {
+  const ChannelIssueEventSourceConfig({
+    required super.type,
+    required this.reconciliation,
+    required this.reconcileInterval,
+  });
+
+  final IssueAssistantReconciliationKind reconciliation;
+  final Duration reconcileInterval;
+
+  ChannelIssueEventSourceConfig copyWith({
+    IssueAssistantEventSourceKind? type,
+    IssueAssistantReconciliationKind? reconciliation,
+    Duration? reconcileInterval,
+  }) {
+    return ChannelIssueEventSourceConfig(
+      type: type ?? this.type,
+      reconciliation: reconciliation ?? this.reconciliation,
+      reconcileInterval: reconcileInterval ?? this.reconcileInterval,
     );
   }
 }
@@ -407,13 +462,10 @@ class _IssueAssistantConfigResolver {
     final notifications = overlay?.notifications;
     return IssueAssistantConfig(
       enabled: overlay?.enabled ?? base?.enabled ?? true,
-      eventSource:
-          overlay?.eventSource ??
-          base?.eventSource ??
-          _defaultEventSourceForProvider(base),
-      pollInterval: overlay?.pollInterval != null
-          ? _parseDuration(overlay!.pollInterval!)
-          : base?.pollInterval ?? const Duration(seconds: 30),
+      eventSource: _resolveEventSource(
+        base: base?.eventSource,
+        overlay: overlay?.eventSource,
+      ),
       maxConcurrentIssues: _resolvePositiveInt(
         value: overlay?.maxConcurrentIssues,
         fallback: base?.maxConcurrentIssues ?? 3,
@@ -452,10 +504,54 @@ class _IssueAssistantConfigResolver {
     );
   }
 
-  IssueAssistantEventSourceKind _defaultEventSourceForProvider(
-    IssueAssistantConfig? base,
-  ) {
-    return base?.eventSource ?? IssueAssistantEventSourceKind.ghPolling;
+  IssueEventSourceConfig _resolveEventSource({
+    required IssueEventSourceConfig? base,
+    required IssueAssistantEventSourceDocument? overlay,
+  }) {
+    final type =
+        overlay?.type ?? base?.type ?? IssueAssistantEventSourceKind.ghPolling;
+    if (_isPollingEventSource(type)) {
+      if (overlay?.reconciliation != null ||
+          overlay?.reconcileInterval != null) {
+        throw FormatException(
+          'Polling event sources do not support reconciliation settings.',
+        );
+      }
+      final fallbackPollInterval = switch (base) {
+        PollingIssueEventSourceConfig(:final pollInterval) => pollInterval,
+        ChannelIssueEventSourceConfig(:final reconcileInterval) =>
+          reconcileInterval,
+        null => const Duration(seconds: 30),
+      };
+      return PollingIssueEventSourceConfig(
+        type: type,
+        pollInterval: overlay?.pollInterval != null
+            ? _parseDuration(overlay!.pollInterval!)
+            : fallbackPollInterval,
+      );
+    }
+
+    final fallbackReconcileInterval = switch (base) {
+      ChannelIssueEventSourceConfig(:final reconcileInterval) =>
+        reconcileInterval,
+      PollingIssueEventSourceConfig(:final pollInterval) => pollInterval,
+      null => const Duration(seconds: 30),
+    };
+    return ChannelIssueEventSourceConfig(
+      type: type,
+      reconciliation:
+          overlay?.reconciliation ??
+          switch (base) {
+            ChannelIssueEventSourceConfig(:final reconciliation) =>
+              reconciliation,
+            _ => IssueAssistantReconciliationKind.continuous,
+          },
+      reconcileInterval: overlay?.reconcileInterval != null
+          ? _parseDuration(overlay!.reconcileInterval!)
+          : overlay?.pollInterval != null
+          ? _parseDuration(overlay!.pollInterval!)
+          : fallbackReconcileInterval,
+    );
   }
 }
 
@@ -582,6 +678,13 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
     final issueAssistant = defaults['issueAssistant'];
     if (issueAssistant is Map<String, dynamic>) {
       _assertCamelCaseMap(issueAssistant, scope: 'defaults.issueAssistant');
+      final eventSource = issueAssistant['eventSource'];
+      if (eventSource is Map<String, dynamic>) {
+        _assertCamelCaseMap(
+          eventSource,
+          scope: 'defaults.issueAssistant.eventSource',
+        );
+      }
       final responders = issueAssistant['responders'];
       if (responders is List) {
         for (final responder in responders) {
@@ -621,6 +724,13 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
           issueAssistant,
           scope: 'projects.${entry.key}.issueAssistant',
         );
+        final eventSource = issueAssistant['eventSource'];
+        if (eventSource is Map<String, dynamic>) {
+          _assertCamelCaseMap(
+            eventSource,
+            scope: 'projects.${entry.key}.issueAssistant.eventSource',
+          );
+        }
         final responders = issueAssistant['responders'];
         if (responders is List) {
           for (final responder in responders) {
@@ -644,6 +754,80 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
           }
         }
       }
+    }
+  }
+}
+
+void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
+  void normalizeIssueAssistant(
+    Map<String, dynamic> issueAssistant, {
+    required IssueAssistantEventSourceKind? defaultType,
+  }) {
+    final rawEventSource = issueAssistant['eventSource'];
+    Map<String, dynamic>? normalizedEventSource;
+
+    if (rawEventSource is String) {
+      normalizedEventSource = <String, dynamic>{'type': rawEventSource};
+    } else if (rawEventSource is Map<String, dynamic>) {
+      normalizedEventSource = Map<String, dynamic>.from(rawEventSource);
+    } else if (rawEventSource == null) {
+      if (issueAssistant.containsKey('pollInterval') ||
+          issueAssistant.containsKey('reconciliation') ||
+          issueAssistant.containsKey('reconcileInterval')) {
+        normalizedEventSource = <String, dynamic>{};
+      }
+    }
+
+    if (normalizedEventSource == null) {
+      return;
+    }
+
+    if (defaultType != null && !normalizedEventSource.containsKey('type')) {
+      normalizedEventSource['type'] = _eventSourceConfigValue(defaultType);
+    }
+
+    for (final field in [
+      'pollInterval',
+      'reconciliation',
+      'reconcileInterval',
+    ]) {
+      if (issueAssistant.containsKey(field) &&
+          !normalizedEventSource.containsKey(field)) {
+        normalizedEventSource[field] = issueAssistant.remove(field);
+      }
+    }
+
+    issueAssistant['eventSource'] = normalizedEventSource;
+  }
+
+  final defaults = root['defaults'];
+  if (defaults is Map<String, dynamic>) {
+    final issueAssistant = defaults['issueAssistant'];
+    if (issueAssistant is Map<String, dynamic>) {
+      normalizeIssueAssistant(
+        issueAssistant,
+        defaultType: IssueAssistantEventSourceKind.ghPolling,
+      );
+    }
+  }
+
+  final projects = root['projects'];
+  if (projects is Map<String, dynamic>) {
+    for (final entry in projects.entries) {
+      final project = entry.value;
+      if (project is! Map<String, dynamic>) {
+        continue;
+      }
+      final issueAssistant = project['issueAssistant'];
+      if (issueAssistant is! Map<String, dynamic>) {
+        continue;
+      }
+      normalizeIssueAssistant(
+        issueAssistant,
+        defaultType: project['provider'] == 'gitea'
+            ? IssueAssistantEventSourceKind.teaPolling
+            : IssueAssistantEventSourceKind.ghPolling,
+      );
     }
   }
 }
@@ -698,7 +882,6 @@ ${_YamlEmitter().write({'defaults': defaultsSection})}
 
     # capabilities: ["planning", "bug_verification"]
     # commentTag: code-work-spawner
-    # eventSource: gh/polling
     # commentPrefixTemplate: |
 ${_commentBlock(defaultCommentPrefixTemplate, indent: '    #   ')}
     # commentFooterTemplate: |
@@ -727,7 +910,10 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
-    #   eventSource: gh/gosmee
+    #   eventSource:
+    #     type: gh/gosmee
+    #     reconciliation: startup-only
+    #     reconcileInterval: 30s
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

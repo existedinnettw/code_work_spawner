@@ -169,6 +169,13 @@ JSON
   exit 0
 fi
 
+if [[ "\$1" == "api" && "\$4" == "search/issues" ]]; then
+  cat <<'JSON'
+{"total_count":0,"incomplete_results":false,"items":[]}
+JSON
+  exit 0
+fi
+
 echo "unexpected gh args: \$*" >&2
 exit 1
 ''');
@@ -232,7 +239,7 @@ projects:
     ///   And a gh script that starts webhook forwarding without delivering an event
     ///   And the same gh script returns a new issue only on a later reconciliation poll
     ///   And a responder that emits a planning reply
-    ///   And an orchestrator-style config that uses gh/webhook-forward with a short poll interval
+    ///   And an orchestrator-style config that uses gh/webhook-forward with continuous reconciliation
     ///   When the long-running app starts and enough time passes for reconciliation polling
     ///   Then it posts exactly one reply for the issue discovered by polling
     ///   And the gh webhook forward command is still invoked for the GitHub project
@@ -348,13 +355,12 @@ exit 1
         'summary': 'posted reconciliation advice',
       });
 
-      // And an orchestrator-style config that uses gh/webhook-forward with a short poll interval.
+      // And an orchestrator-style config that uses gh/webhook-forward with continuous reconciliation.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 1s
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -367,6 +373,8 @@ projects:
     path: ${repoDir.path}
     issueAssistant:
       eventSource: gh/webhook-forward
+      reconciliation: continuous
+      reconcileInterval: 1s
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),

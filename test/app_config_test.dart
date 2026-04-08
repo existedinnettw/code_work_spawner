@@ -103,8 +103,14 @@ projects:
         defaultCommentFooterTemplate,
       );
       expect(
-        config.projects['sample']!.issueAssistant.pollInterval,
+        (config.projects['sample']!.issueAssistant.eventSource
+                as PollingIssueEventSourceConfig)
+            .pollInterval,
         const Duration(seconds: 30),
+      );
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource,
+        isA<PollingIssueEventSourceConfig>(),
       );
       expect(config.projects['sample']!.issueAssistant.maxConcurrentIssues, 3);
     });
@@ -351,7 +357,7 @@ projects:
       // And the repository slug still parses normally.
       expect(config.projects['sample']!.repoSlug.fullName, 'owner/sample');
       expect(
-        config.projects['sample']!.issueAssistant.eventSource,
+        config.projects['sample']!.issueAssistant.eventSource.type,
         IssueAssistantEventSourceKind.teaPolling,
       );
     });
@@ -374,7 +380,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: gh/gosmee
+      eventSource:
+        type: gh/gosmee
 ''');
 
       // When loading the app config from disk.
@@ -382,7 +389,7 @@ projects:
 
       // Then the project keeps gh/gosmee as its event source.
       expect(
-        config.projects['sample']!.issueAssistant.eventSource,
+        config.projects['sample']!.issueAssistant.eventSource.type,
         IssueAssistantEventSourceKind.ghGosmee,
       );
 
@@ -409,7 +416,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: gh/gosmee
+      eventSource:
+        type: gh/gosmee
 ''');
 
       // When loading the app config from disk.
@@ -448,7 +456,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: gh/webhook-forward
+      eventSource:
+        type: gh/webhook-forward
 ''');
 
       // When loading the app config from disk.
@@ -456,12 +465,101 @@ projects:
 
       // Then the project keeps gh/webhook-forward as its event source.
       expect(
-        config.projects['sample']!.issueAssistant.eventSource,
+        config.projects['sample']!.issueAssistant.eventSource.type,
         IssueAssistantEventSourceKind.ghWebhookForward,
       );
 
       // And the GitHub provider remains valid for that project.
       expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
+    });
+
+    /// ```gherkin
+    /// Scenario: Load channel reconciliation settings
+    ///   Given a GitHub project config that uses gh/webhook-forward reconciliation settings
+    ///   When loading the app config from disk
+    ///   Then the project keeps the configured reconciliation mode
+    ///   And the configured reconcile interval is parsed for channel recovery
+    /// ```
+    test('Load channel reconciliation settings', () async {
+      // Given a GitHub project config that uses gh/webhook-forward reconciliation settings.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-channel-reconcile-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: github
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource:
+        type: gh/webhook-forward
+        reconciliation: startup-only
+        reconcileInterval: 5m
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the configured reconciliation mode.
+      expect(
+        (config.projects['sample']!.issueAssistant.eventSource
+                as ChannelIssueEventSourceConfig)
+            .reconciliation,
+        IssueAssistantReconciliationKind.startupOnly,
+      );
+
+      // And the configured reconcile interval is parsed for channel recovery.
+      expect(
+        (config.projects['sample']!.issueAssistant.eventSource
+                as ChannelIssueEventSourceConfig)
+            .reconcileInterval,
+        const Duration(minutes: 5),
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Reuse pollInterval as the fallback reconcile interval
+    ///   Given a legacy channel-based project config that still sets pollInterval
+    ///   When loading the app config from disk
+    ///   Then the project keeps the parsed poll interval for backward compatibility
+    ///   And the same value is reused as the reconcile interval
+    /// ```
+    test('Reuse pollInterval as the fallback reconcile interval', () async {
+      // Given a legacy channel-based project config that still sets pollInterval.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-legacy-channel-poll-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    provider: github
+    repo: owner/sample
+    path: ${tempDir.path}
+    issueAssistant:
+      eventSource:
+        type: gh/webhook-forward
+        pollInterval: 45s
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the parsed poll interval for backward compatibility.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource,
+        isA<ChannelIssueEventSourceConfig>(),
+      );
+
+      // And the same value is reused as the reconcile interval.
+      expect(
+        (config.projects['sample']!.issueAssistant.eventSource
+                as ChannelIssueEventSourceConfig)
+            .reconcileInterval,
+        const Duration(seconds: 45),
+      );
     });
 
     /// ```gherkin
@@ -483,7 +581,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: gh/webhook-forward
+      eventSource:
+        type: gh/webhook-forward
 ''');
 
       // When loading the app config from disk.
@@ -520,7 +619,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: tea/gosmee
+      eventSource:
+        type: tea/gosmee
 ''');
 
       // When loading the app config from disk.
@@ -528,7 +628,7 @@ projects:
 
       // Then the project keeps tea/gosmee as its event source.
       expect(
-        config.projects['sample']!.issueAssistant.eventSource,
+        config.projects['sample']!.issueAssistant.eventSource.type,
         IssueAssistantEventSourceKind.teaGosmee,
       );
 
@@ -555,7 +655,8 @@ projects:
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
-      eventSource: tea/gosmee
+      eventSource:
+        type: tea/gosmee
 ''');
 
       // When loading the app config from disk.
@@ -719,6 +820,16 @@ projects:
           .replaceFirst('    #     timeout: 10m', '        timeout: 10m')
           .replaceFirst('    # issueAssistant:', '    issueAssistant:')
           .replaceFirst('    #   enabled: true', '      enabled: true')
+          .replaceFirst('    #   eventSource:', '      eventSource:')
+          .replaceFirst('    #     type: gh/gosmee', '        type: gh/gosmee')
+          .replaceFirst(
+            '    #     reconciliation: startup-only',
+            '        reconciliation: startup-only',
+          )
+          .replaceFirst(
+            '    #     reconcileInterval: 30s',
+            '        reconcileInterval: 30s',
+          )
           .replaceFirst(
             '    #   mentionTriggers: ["@helper"]',
             '      mentionTriggers: ["@helper"]',
@@ -749,6 +860,12 @@ projects:
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
         '@helper',
       ]);
+      expect(
+        (config.projects['sample']!.issueAssistant.eventSource
+                as ChannelIssueEventSourceConfig)
+            .reconciliation,
+        IssueAssistantReconciliationKind.startupOnly,
+      );
     });
   });
 }

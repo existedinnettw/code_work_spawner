@@ -208,7 +208,7 @@ projects:
     ///   And a gosmee script that starts forwarding without delivering an event
     ///   And a tea script that returns a new issue only on a later reconciliation poll
     ///   And a responder that emits a planning reply
-    ///   And an orchestrator-style config that uses tea/gosmee with a short poll interval
+    ///   And an orchestrator-style config that uses tea/gosmee with continuous reconciliation
     ///   When the long-running app starts and enough time passes for reconciliation polling
     ///   Then it posts exactly one reply for the issue discovered by polling
     ///   And the app performs more than one Gitea issue listing request while running
@@ -344,13 +344,12 @@ exit 1
         'summary': 'posted reconciliation advice',
       });
 
-      // And an orchestrator-style config that uses tea/gosmee with a short poll interval.
+      // And an orchestrator-style config that uses tea/gosmee with continuous reconciliation.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 1s
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -363,6 +362,8 @@ projects:
     path: ${repoDir.path}
     issueAssistant:
       eventSource: tea/gosmee
+      reconciliation: continuous
+      reconcileInterval: 1s
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
