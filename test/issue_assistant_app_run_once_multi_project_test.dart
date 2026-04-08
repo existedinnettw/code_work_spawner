@@ -1,4 +1,11 @@
-part of 'issue_assistant_app_test.dart';
+import 'dart:io';
+
+import 'package:code_work_spawner/code_work_spawner.dart';
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+import 'test_support.dart';
 
 void registerIssueAssistantAppRunOnceMultiProjectTests() {
   /// ```gherkin
@@ -329,4 +336,9 @@ projects:
       );
     });
   });
+}
+
+void main() {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  registerIssueAssistantAppRunOnceMultiProjectTests();
 }
