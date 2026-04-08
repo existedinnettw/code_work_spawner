@@ -5,9 +5,9 @@ import 'dart:io';
 import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
-import 'config.dart';
-import 'issue_event_source.dart';
-import 'issue_tracker_client.dart';
+import '../config.dart';
+import '../issue_tracker_client.dart';
+import 'base.dart';
 
 class GitHubGosmeeIssueEventSource implements IssueEventSource {
   GitHubGosmeeIssueEventSource({

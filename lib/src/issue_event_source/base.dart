@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:github/github.dart';
 import 'package:logging/logging.dart';
 
-import 'config.dart';
-import 'database.dart';
-import 'issue_tracker_client.dart';
+import '../config.dart';
+import '../database.dart';
+import '../issue_tracker_client.dart';
 
 typedef IssueEventBatchHandler = Future<void> Function(IssueEventBatch batch);
 
