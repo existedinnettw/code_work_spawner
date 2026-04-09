@@ -121,6 +121,7 @@ ProjectConfig _project({
   return ProjectConfig(
     key: 'sample',
     provider: IssueTrackerProvider.github,
+    scm: const ScmConfig(provider: ScmProvider.github),
     repo: 'owner/sample',
     repoSlug: RepositorySlug('owner', 'sample'),
     path: '/tmp/sample',

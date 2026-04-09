@@ -14,6 +14,7 @@ export 'config_schema.dart'
         IssueAssistantEventSourceKind,
         IssueAssistantReconciliationKind,
         IssueTrackerProvider,
+        ScmProvider,
         NotificationConfigDocument,
         NotificationEvent,
         NotificationType;
@@ -147,7 +148,10 @@ class AppConfig {
       ),
       projects: {
         'sample': ProjectConfigDocument(
-          provider: IssueTrackerProvider.github,
+          issueTracker: IssueTrackerConfigDocument(
+            provider: IssueTrackerProvider.github,
+          ),
+          scm: ScmConfigDocument(provider: ScmProvider.github),
           repo: 'owner/repo',
           path: '~/path/to/repo',
           defaultBranch: 'main',
@@ -161,6 +165,7 @@ class ProjectConfig {
   ProjectConfig({
     required this.key,
     required this.provider,
+    required this.scm,
     required this.repo,
     required this.repoSlug,
     required this.path,
@@ -171,6 +176,7 @@ class ProjectConfig {
 
   final String key;
   final IssueTrackerProvider provider;
+  final ScmConfig scm;
   final String repo;
   final RepositorySlug repoSlug;
   final String path;
@@ -196,7 +202,14 @@ class ProjectConfig {
       );
     }
 
-    final provider = document.provider ?? IssueTrackerProvider.github;
+    final provider =
+        document.issueTracker?.provider ??
+        document.provider ??
+        IssueTrackerProvider.github;
+    final scm = ScmConfig.fromDocument(
+      document.scm,
+      fallbackProvider: _defaultScmProviderForTracker(provider),
+    );
     var issueAssistant = defaultAssistant.merge(document.issueAssistant);
     if (document.issueAssistant?.eventSource?.type == null &&
         issueAssistant.eventSource is PollingIssueEventSourceConfig) {
@@ -218,21 +231,21 @@ class ProjectConfig {
           throw FormatException(
             'projects.$key.issueAssistant.eventSource '
             '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
-            'requires provider: github.',
+            'requires issueTracker.provider: github.',
           );
         }
       case IssueAssistantEventSourceKind.teaPolling:
         if (provider != IssueTrackerProvider.gitea) {
           throw FormatException(
             'projects.$key.issueAssistant.eventSource tea/polling '
-            'requires provider: gitea.',
+            'requires issueTracker.provider: gitea.',
           );
         }
       case IssueAssistantEventSourceKind.teaGosmee:
         if (provider != IssueTrackerProvider.gitea) {
           throw FormatException(
             'projects.$key.issueAssistant.eventSource tea/gosmee '
-            'requires provider: gitea.',
+            'requires issueTracker.provider: gitea.',
           );
         }
     }
@@ -240,6 +253,7 @@ class ProjectConfig {
     return ProjectConfig(
       key: key,
       provider: provider,
+      scm: scm,
       repo: repo,
       repoSlug: _parseRepositorySlug(repo, field: 'projects.$key.repo'),
       path: _expandHome(path),
@@ -260,6 +274,19 @@ class ProjectConfig {
       );
     }
     return RepositorySlug(parts[0], parts[1]);
+  }
+}
+
+class ScmConfig {
+  const ScmConfig({required this.provider});
+
+  final ScmProvider provider;
+
+  factory ScmConfig.fromDocument(
+    ScmConfigDocument? document, {
+    required ScmProvider fallbackProvider,
+  }) {
+    return ScmConfig(provider: document?.provider ?? fallbackProvider);
   }
 }
 
@@ -757,7 +784,18 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
       if (project is! Map<String, dynamic>) {
         continue;
       }
+      final issueTracker = project['issueTracker'];
+      if (issueTracker is Map<String, dynamic>) {
+        _assertCamelCaseMap(
+          issueTracker,
+          scope: 'projects.${entry.key}.issueTracker',
+        );
+      }
       _assertCamelCaseMap(project, scope: 'projects.${entry.key}');
+      final scm = project['scm'];
+      if (scm is Map<String, dynamic>) {
+        _assertCamelCaseMap(scm, scope: 'projects.${entry.key}.scm');
+      }
       final issueAssistant = project['issueAssistant'];
       if (issueAssistant is Map<String, dynamic>) {
         _assertCamelCaseMap(
@@ -798,7 +836,31 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
   }
 }
 
+ScmProvider _defaultScmProviderForTracker(IssueTrackerProvider provider) {
+  return switch (provider) {
+    IssueTrackerProvider.github => ScmProvider.github,
+    IssueTrackerProvider.gitea => ScmProvider.gitea,
+  };
+}
+
 void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
+  void normalizeProjectTracker(Map<String, dynamic> project) {
+    final rawIssueTracker = project['issueTracker'];
+    Map<String, dynamic>? normalizedIssueTracker;
+
+    if (rawIssueTracker is Map<String, dynamic>) {
+      normalizedIssueTracker = Map<String, dynamic>.from(rawIssueTracker);
+    } else if (rawIssueTracker == null && project.containsKey('provider')) {
+      normalizedIssueTracker = <String, dynamic>{
+        'provider': project.remove('provider'),
+      };
+    }
+
+    if (normalizedIssueTracker != null) {
+      project['issueTracker'] = normalizedIssueTracker;
+    }
+  }
+
   void normalizeIssueAssistant(
     Map<String, dynamic> issueAssistant, {
     required IssueAssistantEventSourceKind? defaultType,
@@ -858,13 +920,17 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
       if (project is! Map<String, dynamic>) {
         continue;
       }
+      normalizeProjectTracker(project);
       final issueAssistant = project['issueAssistant'];
       if (issueAssistant is! Map<String, dynamic>) {
         continue;
       }
       normalizeIssueAssistant(
         issueAssistant,
-        defaultType: project['provider'] == 'gitea'
+        defaultType:
+            ((project['issueTracker'] as Map<String, dynamic>?)?['provider']
+                    as String?) ==
+                'gitea'
             ? IssueAssistantEventSourceKind.teaPolling
             : IssueAssistantEventSourceKind.ghPolling,
       );

@@ -257,12 +257,12 @@ class IssueAssistantApp {
     ResponderResult? selectedResult;
     Object? lastError;
     final needsWorktree = _looksLikeBugVerification(thread);
-    final workspacePath = await workspaceManager.createEphemeralWorktree(
-      project.path,
+    final workspacePath = await workspaceManager.createEphemeralWorkspace(
+      project,
     );
     _log(
       'issue=${project.key}#${issue.number} workspace_mode='
-      'worktree workspace=$workspacePath',
+      'worktree scm=${project.scm.provider.name} workspace=$workspacePath',
     );
 
     try {
@@ -359,7 +359,7 @@ class IssueAssistantApp {
         }
       }
     } finally {
-      await workspaceManager.disposeEphemeralWorktree(workspacePath);
+      await workspaceManager.disposeEphemeralWorkspace(project, workspacePath);
     }
 
     if (selectedResult == null) {

@@ -402,24 +402,26 @@ projects:
       expect(config.projects['sample'], isNotNull);
       expect(config.projects['sample']!.defaultBranch, 'trunk');
       expect(config.projects['sample']!.sessionPrefix, 'ao');
+      expect(config.projects['sample']!.scm.provider, ScmProvider.github);
       expect(config.projects['sample']!.issueAssistant.enabled, isFalse);
     });
 
     /// ```gherkin
-    /// Scenario: Load an explicit Gitea project provider
-    ///   Given a config whose project sets provider to gitea
+    /// Scenario: Load an explicit Gitea issue tracker provider
+    ///   Given a config whose project sets issueTracker.provider to gitea
     ///   When loading the app config from disk
     ///   Then the project keeps the configured Gitea provider
     ///   And the repository slug still parses normally
     /// ```
-    test('Load an explicit Gitea project provider', () async {
-      // Given a config whose project sets provider to gitea.
+    test('Load an explicit Gitea issue tracker provider', () async {
+      // Given a config whose project sets issueTracker.provider to gitea.
       final tempDir = await Directory.systemTemp.createTemp('cws-gitea-');
       final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
     repo: owner/sample
     path: ${tempDir.path}
 ''');
@@ -429,6 +431,7 @@ projects:
 
       // Then the project keeps the configured Gitea provider.
       expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
+      expect(config.projects['sample']!.scm.provider, ScmProvider.gitea);
 
       // And the repository slug still parses normally.
       expect(config.projects['sample']!.repoSlug.fullName, 'owner/sample');
@@ -452,7 +455,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -474,6 +478,45 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load an explicit SCM provider separately from the issue tracker
+    ///   Given a config whose project uses a Gitea issue tracker and GitHub SCM
+    ///   When loading the app config from disk
+    ///   Then the project keeps the configured tracker provider
+    ///   And the project also keeps the explicit SCM provider override
+    /// ```
+    test(
+      'Load an explicit SCM provider separately from the issue tracker',
+      () async {
+        // Given a config whose project uses a Gitea issue tracker and GitHub SCM.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'cws-explicit-scm-',
+        );
+        final configFile = File(
+          p.join(tempDir.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: gitea
+    scm:
+      provider: github
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+        // When loading the app config from disk.
+        final config = await AppConfig.load(configFile.path);
+
+        // Then the project keeps the configured tracker provider.
+        expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
+
+        // And the project also keeps the explicit SCM provider override.
+        expect(config.projects['sample']!.scm.provider, ScmProvider.github);
+      },
+    );
+
+    /// ```gherkin
     /// Scenario: Reject gh/gosmee for non-GitHub providers
     ///   Given a Gitea project config that opts into gh/gosmee
     ///   When loading the app config from disk
@@ -488,7 +531,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -506,7 +550,7 @@ projects:
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('gh/gosmee requires provider: github'),
+            contains('gh/gosmee requires issueTracker.provider: github'),
           ),
         ),
       );
@@ -528,7 +572,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -565,7 +610,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -611,7 +657,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -653,7 +700,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -671,7 +719,9 @@ projects:
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('gh/webhook-forward requires provider: github'),
+            contains(
+              'gh/webhook-forward requires issueTracker.provider: github',
+            ),
           ),
         ),
       );
@@ -691,7 +741,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -727,7 +778,8 @@ projects:
       await configFile.writeAsString('''
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
     repo: owner/sample
     path: ${tempDir.path}
     issueAssistant:
@@ -745,7 +797,7 @@ projects:
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('tea/gosmee requires provider: gitea'),
+            contains('tea/gosmee requires issueTracker.provider: gitea'),
           ),
         ),
       );

@@ -64,7 +64,9 @@ void main() {
       expect(stdoutText, contains('# notifications:'));
       expect(stdoutText, contains(r'#     webhookUrl: ${CWS_DISCORD_WEBHOOK}'));
       expect(stdoutText, contains('#   - type: desktop'));
+      expect(stdoutText, contains('issueTracker:'));
       expect(stdoutText, contains('provider: github'));
+      expect(stdoutText, contains('scm:'));
       expect(stdoutText, contains('projects:'));
 
       // And the printed config is valid when written to disk and loaded.
@@ -114,7 +116,9 @@ void main() {
       expect(withForce.exitCode, 0, reason: '${withForce.stderr}');
       final contents = await outputFile.readAsString();
       expect(contents, contains('defaults:'));
+      expect(contents, contains('issueTracker:'));
       expect(contents, contains('provider: github'));
+      expect(contents, contains('scm:'));
       expect(contents, contains('projects:'));
       final config = await AppConfig.load(outputFile.path);
       expect(config.projects['sample'], isNotNull);

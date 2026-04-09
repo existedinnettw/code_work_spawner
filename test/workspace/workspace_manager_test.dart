@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
+import 'package:github/github.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -48,5 +49,79 @@ void main() {
       expect(await parentDirectory.exists(), isFalse);
       expect(await worktreeRoot.exists(), isTrue);
     });
+
+    /// ```gherkin
+    /// Scenario: Route project workspaces through the configured SCM client
+    ///   Given a workspace manager with a fake GitHub SCM client
+    ///   And a project config that selects GitHub as its SCM provider
+    ///   When creating and disposing an ephemeral workspace for that project
+    ///   Then the workspace manager delegates both operations to the matching SCM client
+    /// ```
+    test('Route project workspaces through the configured SCM client', () async {
+      // Given a workspace manager with a fake GitHub SCM client.
+      final client = _RecordingScmClient();
+      final manager = WorkspaceManager(
+        worktreeRoot: '/tmp/worktrees',
+        clients: {ScmProvider.github: client},
+      );
+
+      // And a project config that selects GitHub as its SCM provider.
+      final project = ProjectConfig(
+        key: 'sample',
+        provider: IssueTrackerProvider.github,
+        scm: const ScmConfig(provider: ScmProvider.github),
+        repo: 'owner/sample',
+        repoSlug: RepositorySlug('owner', 'sample'),
+        path: '/tmp/source-repo',
+        defaultBranch: 'main',
+        sessionPrefix: 'sam',
+        issueAssistant: IssueAssistantConfig(
+          enabled: true,
+          eventSource: const PollingIssueEventSourceConfig(
+            type: IssueAssistantEventSourceKind.ghPolling,
+            pollInterval: Duration(seconds: 30),
+          ),
+          maxConcurrentIssues: 3,
+          mentionTriggers: const ['@helper'],
+          prompt: defaultIssueAssistantPrompt,
+          responders: const <CliResponderConfig>[],
+          capabilities: {AssistantCapability.planning},
+          notifications: const <NotificationConfig>[],
+          commentTag: 'code-work-spawner',
+          commentPrefixTemplate: defaultCommentPrefixTemplate,
+          commentFooterTemplate: defaultCommentFooterTemplate,
+        ),
+      );
+
+      // When creating and disposing an ephemeral workspace for that project.
+      final workspacePath = await manager.createEphemeralWorkspace(project);
+      await manager.disposeEphemeralWorkspace(project, workspacePath);
+
+      // Then the workspace manager delegates both operations to the matching SCM client.
+      expect(client.createdProjectPath, '/tmp/source-repo');
+      expect(client.createdWorkspaceRoot, '/tmp/worktrees');
+      expect(client.disposedWorkspacePath, '/tmp/workspaces/sample');
+    });
   });
+}
+
+class _RecordingScmClient implements ScmClient {
+  String? createdProjectPath;
+  String? createdWorkspaceRoot;
+  String? disposedWorkspacePath;
+
+  @override
+  Future<String> createEphemeralWorkspace({
+    required String projectPath,
+    required String? workspaceRoot,
+  }) async {
+    createdProjectPath = projectPath;
+    createdWorkspaceRoot = workspaceRoot;
+    return '/tmp/workspaces/sample';
+  }
+
+  @override
+  Future<void> disposeEphemeralWorkspace(String workspacePath) async {
+    disposedWorkspacePath = workspacePath;
+  }
 }

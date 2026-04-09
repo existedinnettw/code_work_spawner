@@ -6,7 +6,9 @@ It consumes issue tracker events for configured GitHub or Gitea repositories,
 reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
 `copilot-cli` to decide when to reply. It supports
 multi-repo config, responder fallback chains, and optional Discord webhook and
-desktop notifications.
+desktop notifications. Repository access is configured separately through each
+project's `scm` block so tracker and checkout handling can evolve
+independently.
 
 ## Highlights
 

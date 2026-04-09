@@ -55,7 +55,9 @@ class AppConfigDefaultsDocument {
 )
 class ProjectConfigDocument {
   const ProjectConfigDocument({
+    this.issueTracker,
     this.provider,
+    this.scm,
     this.repo,
     this.path,
     this.defaultBranch,
@@ -63,7 +65,9 @@ class ProjectConfigDocument {
     this.issueAssistant,
   });
 
+  final IssueTrackerConfigDocument? issueTracker;
   final IssueTrackerProvider? provider;
+  final ScmConfigDocument? scm;
   final String? repo;
   final String? path;
   final String? defaultBranch;
@@ -74,6 +78,42 @@ class ProjectConfigDocument {
       _$ProjectConfigDocumentFromJson(json);
 
   Map<String, dynamic> toJson() => _$ProjectConfigDocumentToJson(this);
+}
+
+@JsonSerializable(
+  checked: true,
+  createToJson: true,
+  disallowUnrecognizedKeys: true,
+  explicitToJson: true,
+  includeIfNull: false,
+)
+class IssueTrackerConfigDocument {
+  const IssueTrackerConfigDocument({this.provider});
+
+  final IssueTrackerProvider? provider;
+
+  factory IssueTrackerConfigDocument.fromJson(Map<String, dynamic> json) =>
+      _$IssueTrackerConfigDocumentFromJson(json);
+
+  Map<String, dynamic> toJson() => _$IssueTrackerConfigDocumentToJson(this);
+}
+
+@JsonSerializable(
+  checked: true,
+  createToJson: true,
+  disallowUnrecognizedKeys: true,
+  explicitToJson: true,
+  includeIfNull: false,
+)
+class ScmConfigDocument {
+  const ScmConfigDocument({this.provider});
+
+  final ScmProvider? provider;
+
+  factory ScmConfigDocument.fromJson(Map<String, dynamic> json) =>
+      _$ScmConfigDocumentFromJson(json);
+
+  Map<String, dynamic> toJson() => _$ScmConfigDocumentToJson(this);
 }
 
 @JsonSerializable(
@@ -229,6 +269,9 @@ enum IssueAssistantReconciliationKind {
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum IssueTrackerProvider { github, gitea }
+
+@JsonEnum(fieldRename: FieldRename.snake)
+enum ScmProvider { github, gitea, gitlab }
 
 enum NotificationType { discordWebhook, desktop }
 

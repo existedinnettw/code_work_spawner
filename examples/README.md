@@ -6,6 +6,12 @@ Project entries can override `issueAssistant` fields when a repo needs a
 different prompt, mention triggers, responder chain, notification list, or
 event source.
 
+Each project also has a separate SCM config. `issueTracker.provider` selects
+the issue tracker integration, while `scm.provider` selects how temporary repo
+workspaces are prepared for responders. Legacy top-level project `provider` is
+still accepted during load for backward compatibility. When `scm` is omitted it defaults to a
+matching provider for existing GitHub and Gitea configs.
+
 GitHub projects default to `gh/polling`, and Gitea projects default to
 `tea/polling`. GitHub projects can switch their long-running runtime to
 `gh/gosmee` or `gh/webhook-forward`, and Gitea projects can switch to
