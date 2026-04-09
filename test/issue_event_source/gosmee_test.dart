@@ -76,7 +76,7 @@ void registerIssueAssistantAppRunGosmeeTests() {
       final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
       await teaScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "\$*" >> "${teaLog.path}"
+    printf '%s\n' "\$*" >> "${bashScriptPath(teaLog.path)}"
 
 if [[ "\$1" == "api" && "\$2" == "user" ]]; then
   cat <<'JSON'
@@ -102,7 +102,7 @@ fi
 if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/12/comments" ]]; then
   for arg in "\$@"; do
     if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${postedBody.path}"
+      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
     fi
   done
   cat <<'JSON'
@@ -125,7 +125,7 @@ fi
 echo "unexpected tea args: \$*" >&2
 exit 1
 ''');
-      await Process.run('chmod', ['+x', teaScript.path]);
+      await makeScriptExecutable(teaScript);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
@@ -226,7 +226,7 @@ projects:
       final gosmeeLog = File(p.join(sandbox.path, 'gosmee-log.jsonl'));
       await gosmeeScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "\$*" >> "${gosmeeLog.path}"
+    printf '%s\n' "\$*" >> "${bashScriptPath(gosmeeLog.path)}"
 
 if [[ "\$1" == "--output" && "\$2" == "json" && "\$3" == "client" && "\$4" == "--new-url" ]]; then
   printf '%s\n' 'https://gosmee.example.test/reconcile'
@@ -242,7 +242,7 @@ fi
 echo "unexpected gosmee args: \$*" >&2
 exit 1
 ''');
-      await Process.run('chmod', ['+x', gosmeeScript.path]);
+      await makeScriptExecutable(gosmeeScript);
 
       // And a tea script that returns a new issue only on a later reconciliation poll.
       final teaScript = File(p.join(sandbox.path, 'tea'));
@@ -272,7 +272,7 @@ exit 1
       ];
       await teaScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "\$*" >> "${teaLog.path}"
+    printf '%s\n' "\$*" >> "${bashScriptPath(teaLog.path)}"
 
 if [[ "\$1" == "api" && "\$2" == "user" ]]; then
   cat <<'JSON'
@@ -283,11 +283,11 @@ fi
 
 if [[ "\$1" == "api" && "\$4" == repos/owner/sample/issues\\?state=open* ]]; then
   count=0
-  if [[ -f "${issueListCount.path}" ]]; then
-    count="\$(cat "${issueListCount.path}")"
+  if [[ -f "${bashScriptPath(issueListCount.path)}" ]]; then
+    count="\$(cat "${bashScriptPath(issueListCount.path)}")"
   fi
   count=\$((count + 1))
-  printf '%s' "\$count" > "${issueListCount.path}"
+  printf '%s' "\$count" > "${bashScriptPath(issueListCount.path)}"
   if [[ "\$count" -eq 1 ]]; then
     cat <<'JSON'
 []
@@ -310,7 +310,7 @@ fi
 if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments" ]]; then
   for arg in "\$@"; do
     if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${postedBody.path}"
+      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
     fi
   done
   cat <<'JSON'
@@ -333,7 +333,7 @@ fi
 echo "unexpected tea args: \$*" >&2
 exit 1
 ''');
-      await Process.run('chmod', ['+x', teaScript.path]);
+      await makeScriptExecutable(teaScript);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));

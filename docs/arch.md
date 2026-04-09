@@ -77,7 +77,8 @@ flowchart
 	s2
 	s2
 	n3 --> s3
-	s2 -->|"poll through API to execute job"| s4
+	s2
+	s4
 	s4 -->|"report execute status through API"| s2
 	n1@{ label: "Rectangle" }
 	n1["runners dashboard"]
@@ -90,4 +91,34 @@ flowchart
 		s1["workflow dashboard"]
 	end
 	s1 --> s2
+	n8["github polling"]
+	n9["github webhook + webhook-websocket gateway"]
+	s2 --> n8
+	n8 --> s4
+	s2 --> n9
+	n9 --> s4
 ```
+
+## config option
+
+* (issue) tracker
+	* github(`gh`)
+		* polling
+		* `gh webhook forward`
+		* webhook + smee.io(`gosmee`)
+	* gitlab(`glab`)
+		* webhook + smee.io
+	* gitea(`tea`)
+		* webhook + smee.io
+	* openproject(`openproject-cli`)
+		* polling
+	* linear(`linear`)
+* SCM
+	* github
+	* gitlab
+	* gitea
+* notifier
+	* desktop
+	* discord
+	* slack
+	* email

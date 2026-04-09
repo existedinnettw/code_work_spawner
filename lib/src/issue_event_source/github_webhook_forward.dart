@@ -5,6 +5,7 @@ import 'dart:io';
 import '../app_logger.dart';
 import '../config.dart';
 import '../issue_tracker_client.dart';
+import '../process_launcher.dart';
 import 'base.dart';
 
 class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
@@ -80,7 +81,7 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
         'github/webhook-forward project=${project.key} start_forwarder '
         'command="${issueTrackerClient.ghCommand} webhook forward --events=issues,issue_comment --repo=${project.repo} --url=$url"',
       );
-      final process = await Process.start(issueTrackerClient.ghCommand, [
+      final process = await startExternalCommand(issueTrackerClient.ghCommand, [
         'webhook',
         'forward',
         '--events=issues,issue_comment',
