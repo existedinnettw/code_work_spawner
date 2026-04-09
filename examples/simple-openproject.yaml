@@ -1,0 +1,31 @@
+# Minimal setup for a single OpenProject tracker with repository workspaces
+# managed through an explicit SCM provider.
+# Replies require at least one configured responder.
+
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+
+defaults:
+  issueAssistant:
+    enabled: true
+    eventSource:
+      type: op/polling
+      pollInterval: 30s
+    maxConcurrentIssues: 3
+    mentionTriggers: ["@codex", "@helper"]
+    responders:
+      - id: codex
+        command: codex
+        args: ["exec", "--json"]
+        timeout: 10m
+
+projects:
+  sample-openproject:
+    issueTracker:
+      provider: openproject
+    scm:
+      provider: github
+    # OpenProject project name or numeric project id.
+    repo: Demo project
+    path: ~/repo
+    defaultBranch: main

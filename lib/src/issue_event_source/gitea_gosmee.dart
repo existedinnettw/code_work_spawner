@@ -61,7 +61,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
       for (final project in giteaProjects) project.repo: project,
     };
     for (final project in giteaProjects) {
-      _repoSlugsByProject[project.key] = project.repoSlug;
+      _repoSlugsByProject[project.key] = project.requiredRepoSlug;
     }
     server.listen(
       (request) => unawaited(
@@ -96,7 +96,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
         'public_url=$publicUrl local_url=$localUrl',
       );
       final webhookId = await issueTrackerClient.createGiteaIssueWebhook(
-        repo: project.repoSlug,
+        repo: project.requiredRepoSlug,
         url: publicUrl,
       );
       _webhookIdsByProject[project.key] = webhookId;
@@ -249,7 +249,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
           issueNode is Map<String, dynamic> &&
           (issueNode['pull_request'] == null)) {
         final issue = GitHubIssueSummary.fromRepositoryJson(
-          project.repoSlug,
+          project.requiredRepoSlug,
           issueNode,
         );
         _log(

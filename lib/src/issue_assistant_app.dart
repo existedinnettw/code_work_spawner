@@ -63,6 +63,7 @@ class IssueAssistantApp {
         sources: {
           IssueAssistantEventSourceKind.ghPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.teaPolling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.opPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
@@ -177,7 +178,7 @@ class IssueAssistantApp {
     final notifierRegistry = notifierRegistryFactory(project);
     final thread = await issueTrackerClient.fetchThread(
       provider: project.provider,
-      repo: project.repoSlug,
+      trackerProject: project.repo,
       issue: issue,
     );
     final fingerprint = _fingerprintThread(thread);
@@ -412,7 +413,7 @@ class IssueAssistantApp {
     );
     final posted = await issueTrackerClient.createIssueComment(
       provider: project.provider,
-      repo: project.repoSlug,
+      trackerProject: project.repo,
       issueNumber: issue.number,
       body: commentBody,
     );
