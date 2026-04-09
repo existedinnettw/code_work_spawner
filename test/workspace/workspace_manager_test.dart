@@ -4,7 +4,7 @@ import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import 'test_support.dart';
+import '../test_support.dart';
 
 void main() {
   /// ```gherkin
