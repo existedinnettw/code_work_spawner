@@ -194,77 +194,77 @@
     "dart-api-design": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "d60beeedc91e1be7c51d7fea38acb636c0519b8140159402afcf69f31846cfba"
+      "computedHash": "00f2a541ca05387967b6e44afbce8b3e235a45225e06a376ec98e91116b76c09"
     },
     "dart-async-programming": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "ebff987d2ce82a0c0eebab1b7ebc724d29bb925c56273ee55775550d634a3c72"
+      "computedHash": "52f989f2cb1121b8c5122d4cf6c9dbe7283523e7144e67e1f86640d33a82ce28"
     },
     "dart-code-generation": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "259e371481a822984e666cc5214c97ac1581a0adbbdb4d7cab3997c9b1de2009"
+      "computedHash": "815a84815bbe6681129a6d883278fa6d251d3f4e5a6509e8e1ca74cab4422279"
     },
     "dart-compilation-deployment": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "862ea7fd5efb9bd9760d9eab58880a1f08bb9b64125f171b778ba6918f79980f"
+      "computedHash": "b327d665fd5514cd0e1a193c8c51745405d7476a5b8419c5d9228324b6afa7d9"
     },
     "dart-concurrency-isolates": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "829a819bb37342813eca318e0008d93db83aa313daa58be1b9a508d5b1674a9f"
+      "computedHash": "a3e7ff69a58c462d3ea94d7092d1d03e21eeb43bdbb21174400a111da4a96721"
     },
     "dart-documentation": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "0016010518730eb2aeaabbf5046667deb724040be855a5892db4a9735608ca75"
+      "computedHash": "5eb2845edf402683555208ede425b217484fc1fe21f63131fefe9b249f97697a"
     },
     "dart-effective-style": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "ceaa8cbe82090bf759d763cdc83aa80df79ac2461d0d5f223f63e72f60901ae4"
+      "computedHash": "3b11a0ad963151c12bbf0302cd526dcfdfa6659e194455f168d8441fae60e895"
     },
     "dart-idiomatic-usage": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "ac383cc321ce8eeac6412eecc466e68adfcb131fd98c5b74af9d4b33c64381bf"
+      "computedHash": "c45023b434e63316dd209afc094f7412fd99683869b917f140918d0c065406c8"
     },
     "dart-language-syntax": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "d1b1f4027530bb736247f62135845c06f69148cd3464fc235f942324499aee54"
+      "computedHash": "457294ca1c8e21c0ceb643ded8dfa1a2df1a542bea5825c95d331b99d119bd25"
     },
     "dart-migration-versioning": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "c3fefb316b55d7794a49bc226cee17a2fafc00d75621e23aee1dd3f8c15def3a"
+      "computedHash": "f94fb07b64c2a4f1922504bf4de531de927e076a74b3cbd291a75763c3a7d6cb"
     },
     "dart-native-interop-ffi": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "cac814c48f43b964471b41e99622b471203bb2900845bcc03eca02b2a3162ed5"
+      "computedHash": "0e29e6b5e8cb803d7644c6f13340cc1e3265d23f068be4da0f0781954737b3c6"
     },
     "dart-package-management": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "a1fbb5422c3d9bf980a310b55f8cb938b969234eda60a27038f65833e5d0e805"
+      "computedHash": "569d2a0bcb4b61a15fb8e0f3406d9c54ddc9e1caf44c92302047b91730bd9320"
     },
     "dart-static-analysis": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "f13d7c751ed2d026da741fe7b2535fb11a8d045c48ee91b48c0bf7b8147a3758"
+      "computedHash": "6258439460032ed8204d18abb0f09112ad7969d2497221693b302ce800f12106"
     },
     "dart-testing": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "c6857b34f27d704eadbb770e40512693e18e04bab7345c23818386a6996dea6a"
+      "computedHash": "2d8a5d92cfa90dd5ad13f8f38606bdcb6edec8fc344fde02f51475a29f05d87a"
     },
     "dart-web-development": {
       "source": "dart-lang/skills",
       "sourceType": "github",
-      "computedHash": "2adc4b77a7d30a2c9c52fc96368df10a8242512c95c8bf2b3fc06abf208dc421"
+      "computedHash": "db064015bed95259c6f60ba6eb5123a97d6341e68a0925a60a3d57a31bf71d6c"
     },
     "datanalysis-credit-risk": {
       "source": "github/awesome-copilot",
@@ -839,7 +839,7 @@
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",
       "sourceType": "github",
-      "computedHash": "9c87c315aed143ee3b34bec8117100f5035e0df09e6b23e1ecc772cff434c9ad"
+      "computedHash": "f4cd7570115d97af6bcb2946eb891a958c8d04a43b479871c9ccadbc670ad058"
     },
     "technology-stack-blueprint-generator": {
       "source": "github/awesome-copilot",
@@ -944,7 +944,7 @@
     "worktrunk": {
       "source": "max-sixty/worktrunk",
       "sourceType": "github",
-      "computedHash": "12ed42480bc641bb017955e0884716ccf9d04389e744edad6dfcac4b01c60cca"
+      "computedHash": "d480468e16c7de39a121e6e760788357bb178495f8912b05f05f55977468d72e"
     },
     "write-coding-standards-from-file": {
       "source": "github/awesome-copilot",

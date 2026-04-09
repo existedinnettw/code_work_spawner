@@ -5,6 +5,40 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+String _resolveTestHomeDirectory() {
+  String? getEnv(String key) {
+    final direct = Platform.environment[key];
+    if (direct != null && direct.isNotEmpty) {
+      return direct;
+    }
+    for (final entry in Platform.environment.entries) {
+      if (entry.key.toLowerCase() == key.toLowerCase() &&
+          entry.value.isNotEmpty) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  final home = getEnv('HOME');
+  if (home != null) {
+    return home;
+  }
+
+  final userProfile = getEnv('USERPROFILE');
+  if (userProfile != null) {
+    return userProfile;
+  }
+
+  final homeDrive = getEnv('HOMEDRIVE');
+  final homePath = getEnv('HOMEPATH');
+  if (homeDrive != null && homePath != null) {
+    return '$homeDrive$homePath';
+  }
+
+  throw StateError('No home directory environment variables are set.');
+}
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
@@ -358,16 +392,11 @@ projects:
 
       // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);
+      final home = _resolveTestHomeDirectory();
 
       // Then the app exposes the configured data and worktree directories.
-      expect(
-        config.dataDir,
-        p.join(Platform.environment['HOME']!, '.agent-orchestrator'),
-      );
-      expect(
-        config.worktreeDir,
-        p.join(Platform.environment['HOME']!, '.worktrees'),
-      );
+      expect(config.dataDir, p.join(home, '.agent-orchestrator'));
+      expect(config.worktreeDir, p.join(home, '.worktrees'));
 
       // And each project keeps the configured camelCase settings.
       expect(config.projects['sample'], isNotNull);
@@ -809,24 +838,19 @@ projects:
       // When writing the generated starter config to disk.
       await configFile.writeAsString(contents);
       final config = await AppConfig.load(configFile.path);
+      final home = _resolveTestHomeDirectory();
 
       // Then the file parses through the normal app config loader.
       expect(config.projects['sample'], isNotNull);
 
       // And the required starter values stay available to users.
-      expect(
-        config.dataDir,
-        p.join(Platform.environment['HOME']!, '.agent-orchestrator'),
-      );
+      expect(config.dataDir, p.join(home, '.agent-orchestrator'));
       expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
-      expect(
-        config.worktreeDir,
-        p.join(Platform.environment['HOME']!, '.worktrees'),
-      );
+      expect(config.worktreeDir, p.join(home, '.worktrees'));
       expect(config.projects['sample']!.repo, 'owner/repo');
       expect(
         config.projects['sample']!.path,
-        p.join(Platform.environment['HOME']!, 'path/to/repo'),
+        p.join(home, 'path', 'to', 'repo'),
       );
       expect(config.projects['sample']!.defaultBranch, 'main');
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [

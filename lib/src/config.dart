@@ -647,11 +647,49 @@ String _expandHome(String path) {
     return p.normalize(p.absolute(path));
   }
 
-  final home = AppEnvironment.get('HOME');
+  final home = _resolveHomeDirectory();
   if (home == null || home.isEmpty) {
     throw const FileSystemException('HOME is not set.');
   }
   return p.normalize(p.join(home, path.substring(2)));
+}
+
+String? _resolveHomeDirectory() {
+  final home = _readEnvironmentValue('HOME');
+  if (home != null && home.isNotEmpty) {
+    return home;
+  }
+
+  final userProfile = _readEnvironmentValue('USERPROFILE');
+  if (userProfile != null && userProfile.isNotEmpty) {
+    return userProfile;
+  }
+
+  final homeDrive = _readEnvironmentValue('HOMEDRIVE');
+  final homePath = _readEnvironmentValue('HOMEPATH');
+  if (homeDrive != null &&
+      homeDrive.isNotEmpty &&
+      homePath != null &&
+      homePath.isNotEmpty) {
+    return '$homeDrive$homePath';
+  }
+
+  return null;
+}
+
+String? _readEnvironmentValue(String key) {
+  final direct = AppEnvironment.get(key);
+  if (direct != null && direct.isNotEmpty) {
+    return direct;
+  }
+
+  for (final entry in AppEnvironment.variables.entries) {
+    if (entry.key.toLowerCase() == key.toLowerCase() &&
+        entry.value.isNotEmpty) {
+      return entry.value;
+    }
+  }
+  return null;
 }
 
 String? _expandOptionalPath(String? path) {

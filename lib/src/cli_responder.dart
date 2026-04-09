@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'app_environment.dart';
 import 'config.dart';
 import 'issue_tracker_client.dart';
+import 'process_launcher.dart';
 
 class CliResponderRunner {
   Future<ResponderResult> run({
@@ -27,12 +27,11 @@ class CliResponderRunner {
     };
 
     final stdinPayload = renderTemplate(responder.stdinTemplate, context);
-    final process = await Process.start(
+    final process = await startExternalCommand(
       responder.command,
       responder.args,
       workingDirectory: workspacePath,
       environment: <String, String>{
-        ...AppEnvironment.variables,
         ...responder.env,
         'CWS_PROJECT_KEY': project.key,
         'CWS_REPO': project.repo,

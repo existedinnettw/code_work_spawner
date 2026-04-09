@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:github/github.dart';
 
+import 'process_launcher.dart';
+
 import 'config_schema.dart';
 
 class IssueTrackerClient {
@@ -319,7 +321,7 @@ class IssueTrackerClient {
   }
 
   Future<Object?> _runJson(String command, List<String> arguments) async {
-    final result = await Process.run(command, arguments);
+    final result = await runExternalCommand(command, arguments);
     if (result.exitCode != 0) {
       throw ProcessException(
         command,

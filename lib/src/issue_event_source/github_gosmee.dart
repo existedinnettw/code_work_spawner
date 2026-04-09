@@ -7,6 +7,7 @@ import 'package:github/github.dart';
 import '../app_logger.dart';
 import '../config.dart';
 import '../issue_tracker_client.dart';
+import '../process_launcher.dart';
 import 'base.dart';
 
 class GitHubGosmeeIssueEventSource implements IssueEventSource {
@@ -107,7 +108,7 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
         'github/gosmee project=${project.key} start_client '
         'command="$gosmeeCommand client $publicUrl $localUrl"',
       );
-      final process = await Process.start(gosmeeCommand, [
+      final process = await startExternalCommand(gosmeeCommand, [
         'client',
         publicUrl,
         localUrl,
@@ -284,7 +285,7 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
   }
 
   Future<String> _createGosmeeChannelUrl(String localUrl) async {
-    final result = await Process.run(gosmeeCommand, [
+    final result = await runExternalCommand(gosmeeCommand, [
       '--output',
       'json',
       'client',

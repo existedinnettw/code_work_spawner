@@ -178,7 +178,7 @@ fi
 echo "unexpected gh args: \$*" >&2
 exit 1
 ''');
-      await Process.run('chmod', ['+x', ghScript.path]);
+      await makeScriptExecutable(ghScript);
 
       // And an orchestrator-style config that uses gh/webhook-forward.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
@@ -284,7 +284,7 @@ projects:
       ];
       await ghScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "\$*" >> "${ghLog.path}"
+    printf '%s\n' "\$*" >> "${bashScriptPath(ghLog.path)}"
 
 if [[ "\$1" == "api" && "\$2" == "user" ]]; then
   cat <<'JSON'
@@ -295,11 +295,11 @@ fi
 
 if [[ "\$1" == "api" && "\$4" == "search/issues" ]]; then
   count=0
-  if [[ -f "${searchCountFile.path}" ]]; then
-    count="\$(cat "${searchCountFile.path}")"
+  if [[ -f "${bashScriptPath(searchCountFile.path)}" ]]; then
+    count="\$(cat "${bashScriptPath(searchCountFile.path)}")"
   fi
   count=\$((count + 1))
-  printf '%s' "\$count" > "${searchCountFile.path}"
+  printf '%s' "\$count" > "${bashScriptPath(searchCountFile.path)}"
   if [[ "\$count" -eq 1 ]]; then
     cat <<'JSON'
 {"total_count":0,"incomplete_results":false,"items":[]}
@@ -326,7 +326,7 @@ fi
 if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments" ]]; then
   for arg in "\$@"; do
     if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${postedBody.path}"
+      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
     fi
   done
   cat <<'JSON'
@@ -344,7 +344,7 @@ fi
 echo "unexpected gh args: \$*" >&2
 exit 1
 ''');
-      await Process.run('chmod', ['+x', ghScript.path]);
+      await makeScriptExecutable(ghScript);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));

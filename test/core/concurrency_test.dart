@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import 'test_support.dart';
+import '../test_support.dart';
 
 void registerIssueAssistantAppRunOnceConcurrencyTests() {
   /// ```gherkin

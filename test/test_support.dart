@@ -4,6 +4,54 @@ import 'dart:io';
 import 'package:git/git.dart';
 import 'package:path/path.dart' as p;
 
+Future<void> makeScriptExecutable(File script) async {
+  if (Platform.isWindows) {
+    return;
+  }
+
+  final result = await Process.run('chmod', ['+x', script.path]);
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      'chmod',
+      ['+x', script.path],
+      '${result.stdout}\n${result.stderr}',
+      result.exitCode,
+    );
+  }
+}
+
+String bashScriptPath(String hostPath) {
+  if (!Platform.isWindows) {
+    return hostPath;
+  }
+
+  final normalized = hostPath.replaceAll('\\', '/');
+  final drivePrefixMatch = RegExp(r'^([A-Za-z]):/(.*)$').firstMatch(normalized);
+  if (drivePrefixMatch == null) {
+    return normalized;
+  }
+
+  final driveLetter = drivePrefixMatch.group(1)!.toLowerCase();
+  final rest = drivePrefixMatch.group(2)!;
+  return '/mnt/$driveLetter/$rest';
+}
+
+String hostPathFromScript(String scriptPath) {
+  if (!Platform.isWindows) {
+    return scriptPath;
+  }
+
+  final trimmed = scriptPath.trim();
+  final mntPathMatch = RegExp(r'^/mnt/([a-zA-Z])/(.*)$').firstMatch(trimmed);
+  if (mntPathMatch == null) {
+    return trimmed;
+  }
+
+  final driveLetter = mntPathMatch.group(1)!.toUpperCase();
+  final rest = mntPathMatch.group(2)!.replaceAll('/', '\\');
+  return '$driveLetter:\\$rest';
+}
+
 Future<void> writeFakeGhScript({
   required File ghScript,
   required List<Map<String, Object?>> issueListResponse,
@@ -71,7 +119,7 @@ Future<void> writeFakeGhScript({
   if (ghLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${ghLog.path}"',
+      '"${bashScriptPath(ghLog.path)}"',
     );
   }
 
@@ -154,7 +202,7 @@ Future<void> writeFakeGhScript({
           ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
           ..writeln(
             r'''      printf '%s' "${arg#body=}" > '''
-            '"${postedBodyFile.path}"',
+            '"${bashScriptPath(postedBodyFile.path)}"',
           )
           ..writeln(r'''    fi''');
       }
@@ -179,7 +227,7 @@ Future<void> writeFakeGhScript({
     ..writeln('exit 1');
 
   await ghScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', ghScript.path]);
+  await makeScriptExecutable(ghScript);
 }
 
 Future<void> writeFlakySearchGhScript({
@@ -210,7 +258,7 @@ Future<void> writeFlakySearchGhScript({
   if (ghLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${ghLog.path}"',
+      '"${bashScriptPath(ghLog.path)}"',
     );
   }
 
@@ -224,8 +272,10 @@ Future<void> writeFlakySearchGhScript({
 
   buffer
     ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
-    ..writeln('  if [[ ! -f "${failureStateFile.path}" ]]; then')
-    ..writeln('    touch "${failureStateFile.path}"')
+    ..writeln(
+      '  if [[ ! -f "${bashScriptPath(failureStateFile.path)}" ]]; then',
+    )
+    ..writeln('    touch "${bashScriptPath(failureStateFile.path)}"')
     ..writeln(r'''    echo "error connecting to api.github.com" >&2''')
     ..writeln(
       r'''    echo "check your internet connection or https://githubstatus.com" >&2''',
@@ -256,7 +306,7 @@ Future<void> writeFlakySearchGhScript({
     ..writeln('exit 1');
 
   await ghScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', ghScript.path]);
+  await makeScriptExecutable(ghScript);
 }
 
 Future<void> writeFakeTeaScript({
@@ -287,7 +337,7 @@ Future<void> writeFakeTeaScript({
   if (teaLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${teaLog.path}"',
+      '"${bashScriptPath(teaLog.path)}"',
     );
   }
 
@@ -352,7 +402,7 @@ Future<void> writeFakeTeaScript({
           ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
           ..writeln(
             r'''      printf '%s' "${arg#body=}" > '''
-            '"${postedBodyFile.path}"',
+            '"${bashScriptPath(postedBodyFile.path)}"',
           )
           ..writeln(r'''    fi''');
       }
@@ -377,7 +427,7 @@ Future<void> writeFakeTeaScript({
     ..writeln('exit 1');
 
   await teaScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', teaScript.path]);
+  await makeScriptExecutable(teaScript);
 }
 
 Future<void> writeResponderScript(
@@ -395,7 +445,7 @@ ${jsonEncode(response)}
 JSON
 exit $exitCode
 ''');
-  await Process.run('chmod', ['+x', responderScript.path]);
+  await makeScriptExecutable(responderScript);
 }
 
 Future<void> writeJsonlResponderScript(
@@ -412,7 +462,7 @@ cat <<'JSON'
 {"type":"turn.completed"}
 JSON
 ''');
-  await Process.run('chmod', ['+x', responderScript.path]);
+  await makeScriptExecutable(responderScript);
 }
 
 Future<void> writeDelayedLoggingResponderScript(
@@ -429,15 +479,15 @@ import time
 print(int(time.time() * 1000))
 PY
 }
-printf 'start:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${eventLog.path}"
+printf 'start:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${bashScriptPath(eventLog.path)}"
 cat >/dev/null
 sleep ${delay.inSeconds}
-printf 'end:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${eventLog.path}"
+printf 'end:%s:%s\n' "\$CWS_ISSUE_NUMBER" "\$(timestamp_ms)" >> "${bashScriptPath(eventLog.path)}"
 cat <<'JSON'
 ${jsonEncode(response)}
 JSON
 ''');
-  await Process.run('chmod', ['+x', responderScript.path]);
+  await makeScriptExecutable(responderScript);
 }
 
 Future<void> writeWebhookForwardGhScript({
@@ -478,7 +528,7 @@ Future<void> writeWebhookForwardGhScript({
   if (ghLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${ghLog.path}"',
+      '"${bashScriptPath(ghLog.path)}"',
     );
   }
 
@@ -521,7 +571,7 @@ Future<void> writeWebhookForwardGhScript({
       ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
       ..writeln(
         r'''      printf '%s' "${arg#body=}" > '''
-        '"${postedBodyFile.path}"',
+        '"${bashScriptPath(postedBodyFile.path)}"',
       )
       ..writeln(r'''    fi''');
   }
@@ -567,7 +617,7 @@ Future<void> writeWebhookForwardGhScript({
     ..writeln('exit 1');
 
   await ghScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', ghScript.path]);
+  await makeScriptExecutable(ghScript);
 }
 
 Future<void> writeGitHubGosmeeGhScript({
@@ -601,7 +651,7 @@ Future<void> writeGitHubGosmeeGhScript({
   if (ghLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${ghLog.path}"',
+      '"${bashScriptPath(ghLog.path)}"',
     );
   }
 
@@ -668,7 +718,7 @@ Future<void> writeGitHubGosmeeGhScript({
       ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
       ..writeln(
         r'''      printf '%s' "${arg#body=}" > '''
-        '"${postedBodyFile.path}"',
+        '"${bashScriptPath(postedBodyFile.path)}"',
       )
       ..writeln(r'''    fi''');
   }
@@ -698,7 +748,7 @@ Future<void> writeGitHubGosmeeGhScript({
     ..writeln('exit 1');
 
   await ghScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', ghScript.path]);
+  await makeScriptExecutable(ghScript);
 }
 
 Future<void> writeGosmeeForwardScript({
@@ -714,7 +764,7 @@ Future<void> writeGosmeeForwardScript({
   if (gosmeeLog != null) {
     buffer.writeln(
       r'''printf '%s\n' "$*" >> '''
-      '"${gosmeeLog.path}"',
+      '"${bashScriptPath(gosmeeLog.path)}"',
     );
   }
 
@@ -757,7 +807,7 @@ Future<void> writeGosmeeForwardScript({
     ..writeln('exit 1');
 
   await gosmeeScript.writeAsString(buffer.toString());
-  await Process.run('chmod', ['+x', gosmeeScript.path]);
+  await makeScriptExecutable(gosmeeScript);
 }
 
 Future<void> initGitRepo(Directory directory) async {

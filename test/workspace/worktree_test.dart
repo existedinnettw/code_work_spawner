@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-import 'test_support.dart';
+import '../test_support.dart';
 
 void registerIssueAssistantAppRunOnceWorktreeTests() {
   /// ```gherkin
@@ -78,13 +78,13 @@ void registerIssueAssistantAppRunOnceWorktreeTests() {
         );
         await responderScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-pwd > "${cwdCapture.path}"
-cat > "${stdinCapture.path}"
+pwd > "${bashScriptPath(cwdCapture.path)}"
+cat > "${bashScriptPath(stdinCapture.path)}"
 cat <<'JSON'
 {"decision":"no_reply","mode":"planning","summary":"captured mention context"}
 JSON
 ''');
-        await Process.run('chmod', ['+x', responderScript.path]);
+        await makeScriptExecutable(responderScript);
 
         // And an orchestrator-style config pointing to the fake repo and responder.
         final configFile = File(
@@ -115,7 +115,7 @@ projects:
         await app.close();
 
         // Then the responder runs from an ephemeral worktree instead of the source checkout.
-        final capturedCwd = await cwdCapture.readAsString();
+        final capturedCwd = hostPathFromScript(await cwdCapture.readAsString());
         expect(
           p.normalize(capturedCwd.trim()),
           isNot(p.normalize(repoDir.path)),
@@ -201,13 +201,13 @@ projects:
       );
       await responderScript.writeAsString('''#!/usr/bin/env bash
 set -euo pipefail
-pwd > "${cwdCapture.path}"
+pwd > "${bashScriptPath(cwdCapture.path)}"
 cat >/dev/null
 cat <<'JSON'
 {"decision":"reply","mode":"planning","markdown":"planning reply","summary":"used project path"}
 JSON
 ''');
-      await Process.run('chmod', ['+x', responderScript.path]);
+      await makeScriptExecutable(responderScript);
 
       // And an orchestrator-style config pointing to the fake repo and responder.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
@@ -237,7 +237,7 @@ projects:
       await app.close();
 
       // Then the responder runs from an ephemeral worktree instead of the source checkout.
-      final capturedCwd = await cwdCapture.readAsString();
+      final capturedCwd = hostPathFromScript(await cwdCapture.readAsString());
       expect(p.normalize(capturedCwd.trim()), isNot(p.normalize(repoDir.path)));
       expect(
         p.isWithin(worktreeRoot.path, p.normalize(capturedCwd.trim())),
