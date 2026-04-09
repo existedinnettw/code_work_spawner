@@ -2,7 +2,7 @@
 
 Repository issue thread assistant with an Agent Orchestrator style YAML config.
 
-It consumes issue tracker events for configured GitHub, Gitea, or OpenProject
+It consumes issue tracker events for configured GitHub, GitLab, Gitea, or OpenProject
 projects, reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
 `copilot-cli` to decide when to reply. It supports
 multi-repo config, responder fallback chains, and optional Discord webhook and
@@ -12,7 +12,7 @@ independently.
 
 ## Highlights
 
-- Consume GitHub, Gitea, and OpenProject issue events across multiple projects
+- Consume GitHub, GitLab, Gitea, and OpenProject issue events across multiple projects
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
 - Send optional Discord or desktop notifications for assistant events
@@ -20,7 +20,7 @@ independently.
 ## Requirements
 
 - Dart SDK
-- `gh`, `tea`, and/or OpenProject API credentials authenticated for the target projects
+- `gh`, `glab`, `tea`, and/or OpenProject API credentials authenticated for the target projects
 - Local checkouts for configured repositories
 - Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
 
@@ -28,7 +28,9 @@ independently.
 
 Create a local `agent-orchestrator.yaml` and use
 [`examples/README.md`](examples/README.md) plus
-[`examples/simple-github.yaml`](examples/simple-github.yaml) as the reference.
+[`examples/simple-github.yaml`](examples/simple-github.yaml),
+[`examples/simple-gitlab.yaml`](examples/simple-gitlab.yaml), or
+[`examples/simple-gitea.yaml`](examples/simple-gitea.yaml) as the reference.
 
 Environment placeholders such as `${CWS_DISCORD_WEBHOOK}` are resolved from the
 process environment and from a `.env` file placed next to the selected config
@@ -71,6 +73,7 @@ dart run bin/code_work_spawner.dart \
   --config /path/to/agent-orchestrator.yaml \
   --db /path/to/state.sqlite3 \
   --gh-command /usr/bin/gh \
+  --glab-command /usr/bin/glab \
   --tea-command /usr/bin/tea
 ```
 

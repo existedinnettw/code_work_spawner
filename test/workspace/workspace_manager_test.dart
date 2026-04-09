@@ -102,6 +102,59 @@ void main() {
       expect(client.createdWorkspaceRoot, '/tmp/worktrees');
       expect(client.disposedWorkspacePath, '/tmp/workspaces/sample');
     });
+
+    /// ```gherkin
+    /// Scenario: Route project workspaces through the GitLab SCM client
+    ///   Given a workspace manager with a fake GitLab SCM client
+    ///   And a project config that selects GitLab as its SCM provider
+    ///   When creating and disposing an ephemeral workspace for that project
+    ///   Then the workspace manager delegates both operations to the GitLab SCM client
+    /// ```
+    test('Route project workspaces through the GitLab SCM client', () async {
+      // Given a workspace manager with a fake GitLab SCM client.
+      final client = _RecordingScmClient();
+      final manager = WorkspaceManager(
+        worktreeRoot: '/tmp/worktrees',
+        clients: {ScmProvider.gitlab: client},
+      );
+
+      // And a project config that selects GitLab as its SCM provider.
+      final project = ProjectConfig(
+        key: 'sample',
+        provider: IssueTrackerProvider.gitlab,
+        scm: const ScmConfig(provider: ScmProvider.gitlab),
+        repo: 'group/subgroup/sample',
+        repoSlug: null,
+        path: '/tmp/source-repo',
+        defaultBranch: 'main',
+        sessionPrefix: 'sam',
+        issueAssistant: IssueAssistantConfig(
+          enabled: true,
+          eventSource: const PollingIssueEventSourceConfig(
+            type: IssueAssistantEventSourceKind.glabPolling,
+            pollInterval: Duration(seconds: 30),
+          ),
+          maxConcurrentIssues: 3,
+          mentionTriggers: const ['@helper'],
+          prompt: defaultIssueAssistantPrompt,
+          responders: const <CliResponderConfig>[],
+          capabilities: {AssistantCapability.planning},
+          notifications: const <NotificationConfig>[],
+          commentTag: 'code-work-spawner',
+          commentPrefixTemplate: defaultCommentPrefixTemplate,
+          commentFooterTemplate: defaultCommentFooterTemplate,
+        ),
+      );
+
+      // When creating and disposing an ephemeral workspace for that project.
+      final workspacePath = await manager.createEphemeralWorkspace(project);
+      await manager.disposeEphemeralWorkspace(project, workspacePath);
+
+      // Then the workspace manager delegates both operations to the GitLab SCM client.
+      expect(client.createdProjectPath, '/tmp/source-repo');
+      expect(client.createdWorkspaceRoot, '/tmp/worktrees');
+      expect(client.disposedWorkspacePath, '/tmp/workspaces/sample');
+    });
   });
 }
 

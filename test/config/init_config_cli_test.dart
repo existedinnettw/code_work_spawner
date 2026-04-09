@@ -34,6 +34,7 @@ void main() {
       final stdoutText = result.stdout as String;
       expect(stdoutText, contains('Available commands:'));
       expect(stdoutText, contains('init-config'));
+      expect(stdoutText, contains('--glab-command'));
       expect(stdoutText, contains('--gosmee-command'));
     });
 

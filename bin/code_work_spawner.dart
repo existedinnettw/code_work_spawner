@@ -44,6 +44,11 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
         defaultsTo: 'gh',
       )
       ..addOption(
+        'glab-command',
+        help: 'Path to the glab executable.',
+        defaultsTo: 'glab',
+      )
+      ..addOption(
         'tea-command',
         help: 'Path to the tea executable.',
         defaultsTo: 'tea',
@@ -99,6 +104,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       config: config,
       databasePath: topLevelResults['db'] as String,
       ghCommand: topLevelResults['gh-command'] as String,
+      glabCommand: topLevelResults['glab-command'] as String,
       gosmeeCommand: topLevelResults['gosmee-command'] as String,
       teaCommand: topLevelResults['tea-command'] as String,
     );

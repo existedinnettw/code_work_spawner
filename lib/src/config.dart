@@ -206,6 +206,9 @@ class ProjectConfig {
         document.issueTracker?.provider ??
         document.provider ??
         IssueTrackerProvider.github;
+    if (provider == IssueTrackerProvider.gitlab) {
+      _validateGitLabProjectPath(repo, field: 'projects.$key.repo');
+    }
     final fallbackScmProvider = _defaultScmProviderForTracker(provider);
     if (document.scm?.provider == null && fallbackScmProvider == null) {
       throw FormatException(
@@ -227,6 +230,8 @@ class ProjectConfig {
                   type: switch (provider) {
                     IssueTrackerProvider.github =>
                       IssueAssistantEventSourceKind.ghPolling,
+                    IssueTrackerProvider.gitlab =>
+                      IssueAssistantEventSourceKind.glabPolling,
                     IssueTrackerProvider.gitea =>
                       IssueAssistantEventSourceKind.teaPolling,
                     IssueTrackerProvider.openproject =>
@@ -244,6 +249,13 @@ class ProjectConfig {
             'projects.$key.issueAssistant.eventSource '
             '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
             'requires issueTracker.provider: github.',
+          );
+        }
+      case IssueAssistantEventSourceKind.glabPolling:
+        if (provider != IssueTrackerProvider.gitlab) {
+          throw FormatException(
+            'projects.$key.issueAssistant.eventSource glab/polling '
+            'requires issueTracker.provider: gitlab.',
           );
         }
       case IssueAssistantEventSourceKind.teaPolling:
@@ -284,6 +296,7 @@ class ProjectConfig {
       repoSlug: switch (provider) {
         IssueTrackerProvider.github || IssueTrackerProvider.gitea =>
           _parseRepositorySlug(repo, field: 'projects.$key.repo'),
+        IssueTrackerProvider.gitlab => null,
         IssueTrackerProvider.openproject => null,
       },
       path: _expandHome(path),
@@ -314,6 +327,19 @@ class ProjectConfig {
       );
     }
     return RepositorySlug(parts[0], parts[1]);
+  }
+
+  static void _validateGitLabProjectPath(
+    String value, {
+    required String field,
+  }) {
+    final parts = value.split('/');
+    if (parts.length < 2 || parts.any((part) => part.trim().isEmpty)) {
+      throw FormatException(
+        'Invalid GitLab project path for $field: "$value". '
+        'Expected group/project or group/subgroup/project.',
+      );
+    }
   }
 }
 
@@ -631,6 +657,7 @@ class _IssueAssistantConfigResolver {
 String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => 'gh/polling',
+    IssueAssistantEventSourceKind.glabPolling => 'glab/polling',
     IssueAssistantEventSourceKind.teaPolling => 'tea/polling',
     IssueAssistantEventSourceKind.opPolling => 'op/polling',
     IssueAssistantEventSourceKind.ghGosmee => 'gh/gosmee',
@@ -642,6 +669,7 @@ String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
 bool _isPollingEventSource(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => true,
+    IssueAssistantEventSourceKind.glabPolling => true,
     IssueAssistantEventSourceKind.teaPolling => true,
     IssueAssistantEventSourceKind.opPolling => true,
     IssueAssistantEventSourceKind.ghGosmee => false,
@@ -885,6 +913,7 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
 ScmProvider? _defaultScmProviderForTracker(IssueTrackerProvider provider) {
   return switch (provider) {
     IssueTrackerProvider.github => ScmProvider.github,
+    IssueTrackerProvider.gitlab => ScmProvider.gitlab,
     IssueTrackerProvider.gitea => ScmProvider.gitea,
     IssueTrackerProvider.openproject => null,
   };
@@ -979,12 +1008,13 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
       }
       normalizeIssueAssistant(
         issueAssistant,
-        defaultType:
-            ((project['issueTracker'] as Map<String, dynamic>?)?['provider']
-                    as String?) ==
-                'gitea'
-            ? IssueAssistantEventSourceKind.teaPolling
-            : IssueAssistantEventSourceKind.ghPolling,
+        defaultType: switch ((project['issueTracker']
+                as Map<String, dynamic>?)?['provider']
+            as String?) {
+          'gitlab' => IssueAssistantEventSourceKind.glabPolling,
+          'gitea' => IssueAssistantEventSourceKind.teaPolling,
+          _ => IssueAssistantEventSourceKind.ghPolling,
+        },
       );
     }
   }

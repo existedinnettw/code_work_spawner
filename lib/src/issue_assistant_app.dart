@@ -42,12 +42,14 @@ class IssueAssistantApp {
     required AppConfig config,
     required String databasePath,
     String ghCommand = 'gh',
+    String glabCommand = 'glab',
     String gosmeeCommand = 'gosmee',
     String teaCommand = 'tea',
   }) async {
     final database = AppDatabase.open(databasePath);
     final issueTrackerClient = IssueTrackerClient(
       ghCommand: ghCommand,
+      glabCommand: glabCommand,
       teaCommand: teaCommand,
     );
     final pollingIssueEventSource = PollingIssueEventSource(
@@ -62,6 +64,7 @@ class IssueAssistantApp {
       issueEventSource: RoutedIssueEventSource(
         sources: {
           IssueAssistantEventSourceKind.ghPolling: pollingIssueEventSource,
+          IssueAssistantEventSourceKind.glabPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.teaPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.opPolling: pollingIssueEventSource,
           IssueAssistantEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(

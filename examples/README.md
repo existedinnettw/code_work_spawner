@@ -10,13 +10,14 @@ Each project also has a separate SCM config. `issueTracker.provider` selects
 the issue tracker integration, while `scm.provider` selects how temporary repo
 workspaces are prepared for responders. Legacy top-level project `provider` is
 still accepted during load for backward compatibility. When `scm` is omitted
-it defaults to a matching provider for existing GitHub and Gitea configs.
+it defaults to a matching provider for existing GitHub, GitLab, and Gitea configs.
 
-GitHub projects default to `gh/polling`, and Gitea projects default to
-`tea/polling`. OpenProject projects default to `op/polling` and currently only
-support polling. Because OpenProject issue tracking is not tied to a repository
-host, OpenProject projects must set `scm.provider` explicitly. GitHub projects
-can switch their long-running runtime to
+GitHub projects default to `gh/polling`, GitLab projects default to
+`glab/polling`, and Gitea projects default to `tea/polling`. OpenProject
+projects default to `op/polling` and currently only support polling. GitLab and
+OpenProject currently support polling only. Because OpenProject issue tracking
+is not tied to a repository host, OpenProject projects must set
+`scm.provider` explicitly. GitHub projects can switch their long-running runtime to
 `gh/gosmee` or `gh/webhook-forward`, and Gitea projects can switch to
 `tea/gosmee`.
 For OpenProject, `repo` may be either a numeric project id or an exact project
@@ -68,6 +69,7 @@ Currently supported fields are:
 - `avatarUrl`
 
 Start from [`examples/simple-github.yaml`](simple-github.yaml) for GitHub,
+[`examples/simple-gitlab.yaml`](simple-gitlab.yaml) for GitLab,
 [`examples/simple-gitea.yaml`](simple-gitea.yaml) for Gitea, or
 [`examples/simple-openproject.yaml`](simple-openproject.yaml) for OpenProject.
 This repo uses `dataDir`, `worktreeDir`, and `projects`, and uses

@@ -1,0 +1,30 @@
+# Minimal setup for a single GitLab repo with GitLab Issues.
+# Replies require at least one configured responder.
+
+dataDir: ~/.agent-orchestrator
+worktreeDir: ~/.worktrees
+
+defaults:
+  issueAssistant:
+    enabled: true
+    # GitLab currently supports polling.
+    eventSource:
+      type: glab/polling
+      pollInterval: 30s
+    maxConcurrentIssues: 3
+    mentionTriggers: ["@codex", "@helper"]
+    responders:
+      - id: codex
+        command: codex
+        args: ["exec", "--json"]
+        timeout: 10m
+
+projects:
+  sample-gitlab:
+    issueTracker:
+      provider: gitlab
+    scm:
+      provider: gitlab
+    repo: group/subgroup/repo
+    path: ~/repo
+    defaultBranch: main
