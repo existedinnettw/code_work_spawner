@@ -2,8 +2,8 @@
 
 Repository issue thread assistant with an Agent Orchestrator style YAML config.
 
-It consumes issue tracker events for configured GitHub or Gitea repositories,
-reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
+It consumes issue tracker events for configured GitHub, Gitea, or OpenProject
+projects, reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
 `copilot-cli` to decide when to reply. It supports
 multi-repo config, responder fallback chains, and optional Discord webhook and
 desktop notifications. Repository access is configured separately through each
@@ -12,7 +12,7 @@ independently.
 
 ## Highlights
 
-- Consume GitHub and Gitea issue events across multiple repositories
+- Consume GitHub, Gitea, and OpenProject issue events across multiple projects
 - Trigger replies from mentions or meaningful thread updates
 - Run planning and bug-verification flows in isolated worktrees
 - Send optional Discord or desktop notifications for assistant events
@@ -20,7 +20,7 @@ independently.
 ## Requirements
 
 - Dart SDK
-- `gh` and/or `tea` CLI authenticated for the target repositories
+- `gh`, `tea`, and/or OpenProject API credentials authenticated for the target projects
 - Local checkouts for configured repositories
 - Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
 

@@ -88,8 +88,8 @@ projects:
       // Then the project keeps inherited defaults that were not overridden.
       expect(config.projects['sample'], isNotNull);
       expect(config.projects['sample']!.provider, IssueTrackerProvider.github);
-      expect(config.projects['sample']!.repoSlug.owner, 'owner');
-      expect(config.projects['sample']!.repoSlug.name, 'sample');
+      expect(config.projects['sample']!.repoSlug!.owner, 'owner');
+      expect(config.projects['sample']!.repoSlug!.name, 'sample');
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
         '@helper',
       ]);
@@ -434,11 +434,130 @@ projects:
       expect(config.projects['sample']!.scm.provider, ScmProvider.gitea);
 
       // And the repository slug still parses normally.
-      expect(config.projects['sample']!.repoSlug.fullName, 'owner/sample');
+      expect(config.projects['sample']!.repoSlug!.fullName, 'owner/sample');
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
         IssueAssistantEventSourceKind.teaPolling,
       );
+    });
+
+    /// ```gherkin
+    /// Scenario: Load an explicit OpenProject issue tracker provider
+    ///   Given a config whose project sets issueTracker.provider to openproject
+    ///   And the project declares an explicit SCM provider
+    ///   When loading the app config from disk
+    ///   Then the project keeps the configured OpenProject provider
+    ///   And the project uses op/polling as its default issue event source
+    /// ```
+    test('Load an explicit OpenProject issue tracker provider', () async {
+      // Given a config whose project sets issueTracker.provider to openproject.
+      final tempDir = await Directory.systemTemp.createTemp('cws-openproject-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: openproject
+    scm:
+      provider: github
+    repo: 42
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the configured OpenProject provider.
+      expect(
+        config.projects['sample']!.provider,
+        IssueTrackerProvider.openproject,
+      );
+      expect(config.projects['sample']!.scm.provider, ScmProvider.github);
+
+      // And the project uses op/polling as its default issue event source.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource.type,
+        IssueAssistantEventSourceKind.opPolling,
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Require an explicit SCM provider for OpenProject projects
+    ///   Given a config whose project uses the OpenProject issue tracker
+    ///   And the project omits scm.provider
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear SCM requirement error
+    /// ```
+    test('Require an explicit SCM provider for OpenProject projects', () async {
+      // Given a config whose project uses the OpenProject issue tracker.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-openproject-missing-scm-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: openproject
+    repo: 42
+    path: ${tempDir.path}
+''');
+
+      // And the project omits scm.provider.
+
+      // When loading the app config from disk.
+      final load = AppConfig.load(configFile.path);
+
+      // Then loading fails with a clear SCM requirement error.
+      await expectLater(
+        load,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains(
+              'projects.sample.scm.provider is required for issueTracker.provider: openproject',
+            ),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Accept an OpenProject project name reference
+    ///   Given a config whose project uses the OpenProject issue tracker
+    ///   And the project repo field is a human-readable project name
+    ///   When loading the app config from disk
+    ///   Then loading succeeds without requiring a numeric project id
+    /// ```
+    test('Accept an OpenProject project name reference', () async {
+      // Given a config whose project uses the OpenProject issue tracker.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-openproject-project-name-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: openproject
+    scm:
+      provider: github
+    repo: Demo project
+    path: ${tempDir.path}
+''');
+
+      // And the project repo field is a human-readable project name.
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then loading succeeds without requiring a numeric project id.
+      expect(
+        config.projects['sample']!.provider,
+        IssueTrackerProvider.openproject,
+      );
+      expect(config.projects['sample']!.repo, 'Demo project');
     });
 
     /// ```gherkin

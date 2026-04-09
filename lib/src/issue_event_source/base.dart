@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:github/github.dart';
-
 import '../app_logger.dart';
 import '../config.dart';
 import '../database.dart';
@@ -113,6 +111,8 @@ class RoutedIssueEventSource implements IssueEventSource {
         yield IssueAssistantEventSourceKind.ghPolling;
       case IssueAssistantEventSourceKind.teaPolling:
         yield IssueAssistantEventSourceKind.teaPolling;
+      case IssueAssistantEventSourceKind.opPolling:
+        yield IssueAssistantEventSourceKind.opPolling;
       case IssueAssistantEventSourceKind.ghGosmee:
         if (_shouldRunContinuousReconciliation(project)) {
           yield IssueAssistantEventSourceKind.ghPolling;
@@ -348,12 +348,12 @@ class PollingIssueEventSource implements IssueEventSource {
 
         final issues = await issueTrackerClient.fetchUpdatedIssuesForRepos(
           provider: provider,
-          repos: providerProjects.map((project) => project.repoSlug),
+          trackerProjects: providerProjects.map((project) => project.repo),
           since: providerSince,
         );
         for (final issue in issues) {
           final project =
-              projectsByRepo[_providerRepoKey(provider, issue.repoSlug)];
+              projectsByRepo[_providerRepoKey(provider, issue.trackerProject)];
           if (project == null) {
             continue;
           }
@@ -461,14 +461,14 @@ class PollingIssueEventSource implements IssueEventSource {
   }
 
   String _projectRepoKey(ProjectConfig project) {
-    return _providerRepoKey(project.provider, project.repoSlug);
+    return _providerRepoKey(project.provider, project.repo);
   }
 
   String _providerRepoKey(
     IssueTrackerProvider provider,
-    RepositorySlug repoSlug,
+    String trackerProject,
   ) {
-    return '${provider.name}:${repoSlug.fullName}';
+    return '${provider.name}:$trackerProject';
   }
 
   void _log(String message) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
@@ -335,7 +337,240 @@ projects:
         contains('Plan:\n- keep provider-specific commands isolated'),
       );
     });
+
+    /// ```gherkin
+    /// Scenario: Reply through OpenProject when a user explicitly mentions the assistant
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And an OpenProject API fixture containing a mentioned work package
+    ///   And a responder that emits a planning reply
+    ///   And an orchestrator-style config that uses an OpenProject project name
+    ///   When the app processes one polling cycle
+    ///   Then it reads work package activities and posts exactly one reply through the OpenProject API
+    /// ```
+    test(
+      'Reply through OpenProject when a user explicitly mentions the assistant',
+      () async {
+        // Given a temporary project checkout that can be used as the local repo path.
+        final sandbox = await Directory.systemTemp.createTemp(
+          'cws-openproject-run-',
+        );
+        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+        await initGitRepo(repoDir);
+
+        // And an OpenProject API fixture containing a mentioned work package.
+        final server = await _FakeOpenProjectServer.start();
+        addTearDown(server.close);
+
+        // And a responder that emits a planning reply.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await writeResponderScript(responderScript, {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown': 'Plan:\n- isolate tracker-specific API adapters',
+          'summary': 'posted planning advice',
+        });
+
+        // And an orchestrator-style config that uses an OpenProject project name.
+        final configFile = File(
+          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+        timeout: 1m
+projects:
+  sample:
+    issueTracker:
+      provider: openproject
+    scm:
+      provider: github
+    repo: Demo project
+    path: ${repoDir.path}
+    defaultBranch: main
+''');
+        await File(p.join(sandbox.path, '.env')).writeAsString('''
+OP_CLI_HOST=${server.baseUrl}
+OP_CLI_TOKEN=test-token
+''');
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        );
+
+        // When the app processes one polling cycle.
+        await app.runOnce();
+        final thread = await app.database.findIssueThread('sample', 77);
+        await app.close();
+
+        // Then it reads work package activities and posts exactly one reply through the OpenProject API.
+        expect(
+          server.requestPaths,
+          contains(
+            '/api/v3/projects?pageSize=-1&filters=%5B%7B%22typeahead%22%3A%7B%22operator%22%3A%22%2A%2A%22%2C%22values%22%3A%5B%22Demo+project%22%5D%7D%7D%5D',
+          ),
+        );
+        expect(
+          server.requestPaths,
+          contains(
+            '/api/v3/projects/42/work_packages?pageSize=-1&filters=%5B%7B%22status%22%3A%7B%22operator%22%3A%22o%22%2C%22values%22%3A%5B%5D%7D%7D%5D',
+          ),
+        );
+        expect(
+          server.requestPaths,
+          contains('/api/v3/work_packages/77/activities'),
+        );
+        expect(server.postedBodies, hasLength(1));
+        final postedComment =
+            (jsonDecode(server.postedBodies.single)
+                    as Map<String, dynamic>)['comment']['raw']
+                as String;
+        expect(postedComment, contains('via `op`'));
+        expect(postedComment, contains('@OpenProject Bot'));
+        expect(
+          postedComment,
+          contains('Plan:\n- isolate tracker-specific API adapters'),
+        );
+        expect(thread, isNotNull);
+        expect(
+          thread!.lastCommentUrl,
+          '${server.baseUrl}/api/v3/activities/701',
+        );
+      },
+    );
   });
+}
+
+class _FakeOpenProjectServer {
+  _FakeOpenProjectServer._(this._server);
+
+  final HttpServer _server;
+  final List<String> requestPaths = <String>[];
+  final List<String> postedBodies = <String>[];
+
+  String get baseUrl => 'http://${_server.address.host}:${_server.port}';
+
+  static Future<_FakeOpenProjectServer> start() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final fixture = _FakeOpenProjectServer._(server);
+    unawaited(
+      server.forEach((request) async {
+        fixture.requestPaths.add(request.uri.toString());
+        final authHeader = request.headers.value(
+          HttpHeaders.authorizationHeader,
+        );
+        if (authHeader !=
+            'Basic ${base64Encode(utf8.encode('apikey:test-token'))}') {
+          request.response.statusCode = HttpStatus.unauthorized;
+          await request.response.close();
+          return;
+        }
+
+        final response = request.response
+          ..headers.contentType = ContentType.json;
+        if (request.method == 'GET' && request.uri.path == '/api/v3/projects') {
+          response.write(
+            jsonEncode({
+              '_embedded': {
+                'elements': [
+                  {'id': 42, 'name': 'Demo project'},
+                ],
+              },
+            }),
+          );
+          await response.close();
+          return;
+        }
+
+        if (request.method == 'GET' &&
+            request.uri.path == '/api/v3/projects/42/work_packages') {
+          response.write(
+            jsonEncode({
+              '_embedded': {
+                'elements': [
+                  {
+                    'id': 77,
+                    'subject': 'Need OpenProject support',
+                    'updatedAt': '2026-04-04T12:00:00Z',
+                    'description': {'raw': 'Please add OpenProject support.'},
+                    '_links': {
+                      'self': {
+                        'href': 'https://openproject.example.test/wp/77',
+                      },
+                      'author': {'title': 'reporter'},
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+          await response.close();
+          return;
+        }
+
+        if (request.method == 'GET' &&
+            request.uri.path == '/api/v3/work_packages/77/activities') {
+          response.write(
+            jsonEncode({
+              '_embedded': {
+                'elements': [
+                  {
+                    'id': 501,
+                    'comment': {
+                      'raw': '@helper can you plan this integration?',
+                    },
+                    'createdAt': '2026-04-04T12:00:00Z',
+                    'updatedAt': '2026-04-04T12:00:00Z',
+                    '_links': {
+                      'self': {'href': '/api/v3/activities/501'},
+                      'user': {'title': 'reporter'},
+                    },
+                  },
+                ],
+              },
+            }),
+          );
+          await response.close();
+          return;
+        }
+
+        if (request.method == 'GET' && request.uri.path == '/api/v3/users/me') {
+          response.write(jsonEncode({'id': 1, 'name': 'OpenProject Bot'}));
+          await response.close();
+          return;
+        }
+
+        if (request.method == 'POST' &&
+            request.uri.path == '/api/v3/work_packages/77/activities') {
+          final body = await utf8.decoder.bind(request).join();
+          fixture.postedBodies.add(body);
+          response.statusCode = HttpStatus.created;
+          response.write(
+            jsonEncode({
+              'id': 701,
+              'comment': {'raw': jsonDecode(body)['comment']['raw']},
+              '_links': {
+                'self': {'href': '/api/v3/activities/701'},
+              },
+            }),
+          );
+          await response.close();
+          return;
+        }
+
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      }),
+    );
+    return fixture;
+  }
+
+  Future<void> close() => _server.close(force: true);
 }
 
 void main() {

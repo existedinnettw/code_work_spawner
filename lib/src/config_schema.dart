@@ -252,6 +252,8 @@ enum IssueAssistantEventSourceKind {
   ghPolling,
   @JsonValue('tea/polling')
   teaPolling,
+  @JsonValue('op/polling')
+  opPolling,
   @JsonValue('gh/gosmee')
   ghGosmee,
   @JsonValue('gh/webhook-forward')
@@ -268,7 +270,7 @@ enum IssueAssistantReconciliationKind {
 }
 
 @JsonEnum(fieldRename: FieldRename.snake)
-enum IssueTrackerProvider { github, gitea }
+enum IssueTrackerProvider { github, gitea, openproject }
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum ScmProvider { github, gitea, gitlab }

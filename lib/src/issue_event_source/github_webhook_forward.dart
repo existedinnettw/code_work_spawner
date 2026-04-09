@@ -204,7 +204,7 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
           issueNode is Map<String, dynamic> &&
           (issueNode['pull_request'] == null)) {
         final issue = GitHubIssueSummary.fromRepositoryJson(
-          project.repoSlug,
+          project.requiredRepoSlug,
           issueNode,
         );
         _log(

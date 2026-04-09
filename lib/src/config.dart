@@ -178,7 +178,7 @@ class ProjectConfig {
   final IssueTrackerProvider provider;
   final ScmConfig scm;
   final String repo;
-  final RepositorySlug repoSlug;
+  final RepositorySlug? repoSlug;
   final String path;
   final String defaultBranch;
   final String sessionPrefix;
@@ -206,9 +206,16 @@ class ProjectConfig {
         document.issueTracker?.provider ??
         document.provider ??
         IssueTrackerProvider.github;
+    final fallbackScmProvider = _defaultScmProviderForTracker(provider);
+    if (document.scm?.provider == null && fallbackScmProvider == null) {
+      throw FormatException(
+        'projects.$key.scm.provider is required for '
+        'issueTracker.provider: ${provider.name}.',
+      );
+    }
     final scm = ScmConfig.fromDocument(
       document.scm,
-      fallbackProvider: _defaultScmProviderForTracker(provider),
+      fallbackProvider: fallbackScmProvider,
     );
     var issueAssistant = defaultAssistant.merge(document.issueAssistant);
     if (document.issueAssistant?.eventSource?.type == null &&
@@ -217,9 +224,14 @@ class ProjectConfig {
         eventSource:
             (issueAssistant.eventSource as PollingIssueEventSourceConfig)
                 .copyWith(
-                  type: provider == IssueTrackerProvider.github
-                      ? IssueAssistantEventSourceKind.ghPolling
-                      : IssueAssistantEventSourceKind.teaPolling,
+                  type: switch (provider) {
+                    IssueTrackerProvider.github =>
+                      IssueAssistantEventSourceKind.ghPolling,
+                    IssueTrackerProvider.gitea =>
+                      IssueAssistantEventSourceKind.teaPolling,
+                    IssueTrackerProvider.openproject =>
+                      IssueAssistantEventSourceKind.opPolling,
+                  },
                 ),
       );
     }
@@ -248,6 +260,20 @@ class ProjectConfig {
             'requires issueTracker.provider: gitea.',
           );
         }
+      case IssueAssistantEventSourceKind.opPolling:
+        if (provider != IssueTrackerProvider.openproject) {
+          throw FormatException(
+            'projects.$key.issueAssistant.eventSource op/polling '
+            'requires issueTracker.provider: openproject.',
+          );
+        }
+    }
+
+    if (provider == IssueTrackerProvider.openproject && repo.trim().isEmpty) {
+      throw FormatException(
+        'Invalid OpenProject project reference for projects.$key.repo: '
+        '"$repo". Expected a project id or exact project name.',
+      );
     }
 
     return ProjectConfig(
@@ -255,12 +281,26 @@ class ProjectConfig {
       provider: provider,
       scm: scm,
       repo: repo,
-      repoSlug: _parseRepositorySlug(repo, field: 'projects.$key.repo'),
+      repoSlug: switch (provider) {
+        IssueTrackerProvider.github || IssueTrackerProvider.gitea =>
+          _parseRepositorySlug(repo, field: 'projects.$key.repo'),
+        IssueTrackerProvider.openproject => null,
+      },
       path: _expandHome(path),
       defaultBranch: document.defaultBranch ?? 'main',
       sessionPrefix: document.sessionPrefix ?? _deriveSessionPrefix(key),
       issueAssistant: issueAssistant,
     );
+  }
+
+  RepositorySlug get requiredRepoSlug {
+    final slug = repoSlug;
+    if (slug == null) {
+      throw StateError(
+        'Issue tracker provider ${provider.name} does not use a repository slug.',
+      );
+    }
+    return slug;
   }
 
   static RepositorySlug _parseRepositorySlug(
@@ -284,9 +324,13 @@ class ScmConfig {
 
   factory ScmConfig.fromDocument(
     ScmConfigDocument? document, {
-    required ScmProvider fallbackProvider,
+    ScmProvider? fallbackProvider,
   }) {
-    return ScmConfig(provider: document?.provider ?? fallbackProvider);
+    final provider = document?.provider ?? fallbackProvider;
+    if (provider == null) {
+      throw const FormatException('Missing required SCM provider.');
+    }
+    return ScmConfig(provider: provider);
   }
 }
 
@@ -588,6 +632,7 @@ String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => 'gh/polling',
     IssueAssistantEventSourceKind.teaPolling => 'tea/polling',
+    IssueAssistantEventSourceKind.opPolling => 'op/polling',
     IssueAssistantEventSourceKind.ghGosmee => 'gh/gosmee',
     IssueAssistantEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
     IssueAssistantEventSourceKind.teaGosmee => 'tea/gosmee',
@@ -598,6 +643,7 @@ bool _isPollingEventSource(IssueAssistantEventSourceKind value) {
   return switch (value) {
     IssueAssistantEventSourceKind.ghPolling => true,
     IssueAssistantEventSourceKind.teaPolling => true,
+    IssueAssistantEventSourceKind.opPolling => true,
     IssueAssistantEventSourceKind.ghGosmee => false,
     IssueAssistantEventSourceKind.ghWebhookForward => false,
     IssueAssistantEventSourceKind.teaGosmee => false,
@@ -836,15 +882,21 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
   }
 }
 
-ScmProvider _defaultScmProviderForTracker(IssueTrackerProvider provider) {
+ScmProvider? _defaultScmProviderForTracker(IssueTrackerProvider provider) {
   return switch (provider) {
     IssueTrackerProvider.github => ScmProvider.github,
     IssueTrackerProvider.gitea => ScmProvider.gitea,
+    IssueTrackerProvider.openproject => null,
   };
 }
 
 void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
   void normalizeProjectTracker(Map<String, dynamic> project) {
+    final repo = project['repo'];
+    if (repo != null && repo is! String) {
+      project['repo'] = repo.toString();
+    }
+
     final rawIssueTracker = project['issueTracker'];
     Map<String, dynamic>? normalizedIssueTracker;
 
