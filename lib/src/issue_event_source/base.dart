@@ -109,6 +109,8 @@ class RoutedIssueEventSource implements IssueEventSource {
     switch (project.issueAssistant.eventSource.type) {
       case IssueAssistantEventSourceKind.ghPolling:
         yield IssueAssistantEventSourceKind.ghPolling;
+      case IssueAssistantEventSourceKind.glabPolling:
+        yield IssueAssistantEventSourceKind.glabPolling;
       case IssueAssistantEventSourceKind.teaPolling:
         yield IssueAssistantEventSourceKind.teaPolling;
       case IssueAssistantEventSourceKind.opPolling:

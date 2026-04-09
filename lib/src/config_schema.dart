@@ -250,6 +250,8 @@ enum AssistantCapability { planning, bugVerification }
 enum IssueAssistantEventSourceKind {
   @JsonValue('gh/polling')
   ghPolling,
+  @JsonValue('glab/polling')
+  glabPolling,
   @JsonValue('tea/polling')
   teaPolling,
   @JsonValue('op/polling')
@@ -270,7 +272,7 @@ enum IssueAssistantReconciliationKind {
 }
 
 @JsonEnum(fieldRename: FieldRename.snake)
-enum IssueTrackerProvider { github, gitea, openproject }
+enum IssueTrackerProvider { github, gitlab, gitea, openproject }
 
 @JsonEnum(fieldRename: FieldRename.snake)
 enum ScmProvider { github, gitea, gitlab }

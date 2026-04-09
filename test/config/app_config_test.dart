@@ -442,6 +442,41 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load an explicit GitLab issue tracker provider
+    ///   Given a config whose project sets issueTracker.provider to gitlab
+    ///   When loading the app config from disk
+    ///   Then the project keeps the configured GitLab provider
+    ///   And the project uses GitLab polling and GitLab SCM by default
+    /// ```
+    test('Load an explicit GitLab issue tracker provider', () async {
+      // Given a config whose project sets issueTracker.provider to gitlab.
+      final tempDir = await Directory.systemTemp.createTemp('cws-gitlab-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: gitlab
+    repo: group/subgroup/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the configured GitLab provider.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.gitlab);
+
+      // And the project uses GitLab polling and GitLab SCM by default.
+      expect(config.projects['sample']!.scm.provider, ScmProvider.gitlab);
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource.type,
+        IssueAssistantEventSourceKind.glabPolling,
+      );
+      expect(config.projects['sample']!.repo, 'group/subgroup/sample');
+    });
+
+    /// ```gherkin
     /// Scenario: Load an explicit OpenProject issue tracker provider
     ///   Given a config whose project sets issueTracker.provider to openproject
     ///   And the project declares an explicit SCM provider

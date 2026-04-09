@@ -17,6 +17,8 @@ abstract interface class ScmClient {
 
 class GitHubScmClient extends _GitWorktreeScmClient {}
 
+class GitLabScmClient extends _GitWorktreeScmClient {}
+
 class GiteaScmClient extends _GitWorktreeScmClient {}
 
 abstract class _GitWorktreeScmClient implements ScmClient {
@@ -117,5 +119,6 @@ abstract class _GitWorktreeScmClient implements ScmClient {
 
 Map<ScmProvider, ScmClient> defaultScmClients() => {
   ScmProvider.github: GitHubScmClient(),
+  ScmProvider.gitlab: GitLabScmClient(),
   ScmProvider.gitea: GiteaScmClient(),
 };
