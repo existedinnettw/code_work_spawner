@@ -51,7 +51,10 @@ defaults:
 
 projects:
   code-work-spawner:
-    provider: github
+    issueTracker:
+      provider: github
+    scm:
+      provider: github
     repo: existedinnettw/code_work_spawner
     path: ~/code_work_spawner
     defaultBranch: main

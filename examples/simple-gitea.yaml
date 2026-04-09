@@ -25,7 +25,10 @@ defaults:
 
 projects:
   sample-gitea:
-    provider: gitea
+    issueTracker:
+      provider: gitea
+    scm:
+      provider: gitea
     repo: owner/repo
     path: ~/repo
     defaultBranch: main

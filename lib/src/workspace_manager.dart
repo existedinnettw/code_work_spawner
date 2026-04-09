@@ -1,100 +1,46 @@
-import 'dart:io';
-
-import 'package:git/git.dart';
-import 'package:path/path.dart' as p;
-
-import 'app_environment.dart';
+import 'config.dart';
+import 'scm_client.dart';
 
 class WorkspaceManager {
-  WorkspaceManager({this.worktreeRoot});
+  WorkspaceManager({this.worktreeRoot, Map<ScmProvider, ScmClient>? clients})
+    : _clients = clients ?? defaultScmClients();
 
   final String? worktreeRoot;
-  static const Set<String> _gitContextEnvironmentKeys = {
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_COMMON_DIR',
-    'GIT_DIR',
-    'GIT_IMPLICIT_WORK_TREE',
-    'GIT_INDEX_FILE',
-    'GIT_OBJECT_DIRECTORY',
-    'GIT_PREFIX',
-    'GIT_WORK_TREE',
-  };
+  final Map<ScmProvider, ScmClient> _clients;
 
-  Future<String> createEphemeralWorktree(String projectPath) async {
-    final repository = await GitDir.fromExisting(projectPath);
-    final parent = await _createWorktreeParent();
-    final workspacePath = p.join(parent.path, 'repo');
-    final command = [
-      '-C',
-      repository.path,
-      'worktree',
-      'add',
-      '--detach',
-      workspacePath,
-      'HEAD',
-    ];
-    final result = await _runGit(command);
-
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        'git',
-        command,
-        '${result.stdout}\n${result.stderr}',
-        result.exitCode,
-      );
-    }
-
-    return workspacePath;
-  }
-
-  Future<Directory> _createWorktreeParent() async {
-    if (worktreeRoot == null) {
-      return Directory.systemTemp.createTemp('cws-worktree-');
-    }
-
-    final root = Directory(worktreeRoot!);
-    await root.create(recursive: true);
-    return Directory(
-      p.join(
-        root.path,
-        'cws-worktree-${DateTime.now().microsecondsSinceEpoch}',
-      ),
-    )..createSync();
-  }
-
-  Future<void> disposeEphemeralWorktree(String workspacePath) async {
-    await GitDir.fromExisting(workspacePath);
-    final result = await _runGit([
-      '-C',
-      workspacePath,
-      'worktree',
-      'remove',
-      '--force',
-      workspacePath,
-    ]);
-
-    if (result.exitCode != 0) {
-      final directory = Directory(p.dirname(workspacePath));
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-      return;
-    }
-
-    final tempRoot = Directory(p.dirname(workspacePath));
-    if (await tempRoot.exists()) {
-      await tempRoot.delete(recursive: true);
-    }
-  }
-
-  Future<ProcessResult> _runGit(List<String> arguments) {
-    final environment = Map<String, String>.from(AppEnvironment.variables)
-      ..removeWhere((key, _) => _gitContextEnvironmentKeys.contains(key));
-    return Process.run(
-      'git',
-      arguments,
-      environment: environment,
-      includeParentEnvironment: false,
+  Future<String> createEphemeralWorkspace(ProjectConfig project) {
+    return _clientFor(project.scm.provider).createEphemeralWorkspace(
+      projectPath: project.path,
+      workspaceRoot: worktreeRoot,
     );
+  }
+
+  Future<void> disposeEphemeralWorkspace(ProjectConfig project, String path) {
+    return _clientFor(project.scm.provider).disposeEphemeralWorkspace(path);
+  }
+
+  Future<String> createEphemeralWorktree(
+    String projectPath, {
+    ScmProvider provider = ScmProvider.github,
+  }) {
+    return _clientFor(provider).createEphemeralWorkspace(
+      projectPath: projectPath,
+      workspaceRoot: worktreeRoot,
+    );
+  }
+
+  Future<void> disposeEphemeralWorktree(
+    String workspacePath, {
+    ScmProvider provider = ScmProvider.github,
+  }) {
+    return _clientFor(provider).disposeEphemeralWorkspace(workspacePath);
+  }
+
+  ScmClient _clientFor(ScmProvider provider) {
+    final client = _clients[provider];
+    if (client == null) {
+      throw UnsupportedError('SCM provider ${provider.name} is not supported.');
+    }
+    return client;
   }
 }

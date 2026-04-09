@@ -7,4 +7,5 @@ export 'src/issue_event_source/base.dart';
 export 'src/issue_tracker_client.dart';
 export 'src/issue_assistant_app.dart';
 export 'src/notifier.dart';
+export 'src/scm_client.dart';
 export 'src/workspace_manager.dart';
