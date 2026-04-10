@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../app_logger.dart';
-import '../config.dart';
-import '../issue_tracker_client.dart';
-import '../process_launcher.dart';
+import '../../config/app_logger.dart';
+import '../../config/config.dart';
+import '../client.dart';
+import '../models.dart';
+import '../../core/process_launcher.dart';
 import 'base.dart';
 
 class GitHubWebhookForwardIssueEventSource implements IssueEventSource {

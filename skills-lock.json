@@ -349,7 +349,7 @@
     "eval-driven-dev": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
-      "computedHash": "0b2cf0b8a57cf332eecb36ca00c6bb0636a3b0ecfc1f79f28b1fd4bab7f8d4fb"
+      "computedHash": "1b5d8a5edb5c3540cd260e9ac71394077f814151b71fc343afb6ffd7e15c21b9"
     },
     "excalidraw-diagram-generator": {
       "source": "github/awesome-copilot",
@@ -944,7 +944,7 @@
     "worktrunk": {
       "source": "max-sixty/worktrunk",
       "sourceType": "github",
-      "computedHash": "d480468e16c7de39a121e6e760788357bb178495f8912b05f05f55977468d72e"
+      "computedHash": "e95e53e4ef26baddf9efb6b6c4e08276384edba9d7e9269d61a11f2c6871c6d5"
     },
     "write-coding-standards-from-file": {
       "source": "github/awesome-copilot",

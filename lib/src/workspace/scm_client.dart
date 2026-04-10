@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:git/git.dart';
 import 'package:path/path.dart' as p;
 
-import 'app_environment.dart';
-import 'config.dart';
+import '../config/app_environment.dart';
+import '../config/config.dart';
 
 abstract interface class ScmClient {
   Future<String> createEphemeralWorkspace({

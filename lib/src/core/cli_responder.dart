@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'config.dart';
-import 'issue_tracker_client.dart';
+import '../config/config.dart';
+import '../issue_tracker/issue_tracker_client.dart';
 import 'process_launcher.dart';
 
 class CliResponderRunner {

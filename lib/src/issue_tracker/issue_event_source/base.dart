@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../app_logger.dart';
-import '../config.dart';
-import '../database.dart';
-import '../issue_tracker_client.dart';
+import '../../config/app_logger.dart';
+import '../../config/config.dart';
+import '../../core/database.dart';
+import '../client.dart';
+import '../models.dart';
 
 typedef IssueEventBatchHandler = Future<void> Function(IssueEventBatch batch);
 

@@ -4,10 +4,11 @@ import 'dart:io';
 
 import 'package:github/github.dart';
 
-import '../app_logger.dart';
-import '../config.dart';
-import '../issue_tracker_client.dart';
-import '../process_launcher.dart';
+import '../../config/app_logger.dart';
+import '../../config/config.dart';
+import '../client.dart';
+import '../models.dart';
+import '../../core/process_launcher.dart';
 import 'base.dart';
 
 class GiteaGosmeeIssueEventSource implements IssueEventSource {

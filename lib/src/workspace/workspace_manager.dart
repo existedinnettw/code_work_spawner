@@ -1,4 +1,4 @@
-import 'config.dart';
+import '../config/config.dart';
 import 'scm_client.dart';
 
 class WorkspaceManager {

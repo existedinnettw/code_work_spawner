@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'config.dart';
+import '../config/config.dart';
 
 typedef NotificationLogger = void Function(String message);
 typedef DesktopNotificationCommandRunner =

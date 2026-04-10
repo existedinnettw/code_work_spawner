@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:github/github.dart';
 import 'package:path/path.dart' as p;
 
-import '../app_environment.dart';
-import '../config_schema.dart';
-import '../process_launcher.dart';
+import '../config/app_environment.dart';
+import '../config/config_schema.dart';
+import '../core/process_launcher.dart';
 import 'models.dart';
 
 class IssueTrackerClient {

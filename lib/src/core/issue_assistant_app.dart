@@ -3,17 +3,17 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-import 'app_logger.dart';
+import '../config/app_logger.dart';
 import 'cli_responder.dart';
-import 'config.dart';
+import '../config/config.dart';
 import 'database.dart';
-import 'issue_event_source/base.dart';
-import 'issue_event_source/gitea_gosmee.dart';
-import 'issue_event_source/github_gosmee.dart';
-import 'issue_event_source/github_webhook_forward.dart';
-import 'issue_tracker_client.dart';
-import 'notifier.dart';
-import 'workspace_manager.dart';
+import '../issue_tracker/issue_event_source/base.dart';
+import '../issue_tracker/issue_event_source/gitea_gosmee.dart';
+import '../issue_tracker/issue_event_source/github_gosmee.dart';
+import '../issue_tracker/issue_event_source/github_webhook_forward.dart';
+import '../issue_tracker/issue_tracker_client.dart';
+import '../notifier/notifier.dart';
+import '../workspace/workspace_manager.dart';
 
 class IssueAssistantApp {
   static final AppLogger _logger = AppLogger('code_work_spawner.app');
@@ -333,7 +333,7 @@ class IssueAssistantApp {
             stdout: rawStdout,
             stderr: rawStderr,
           );
-          _log(
+          _logError(
             'responder=${responder.id} issue=${project.key}#${issue.number} '
             'failed error=$error',
           );
