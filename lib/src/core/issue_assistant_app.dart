@@ -390,6 +390,19 @@ class IssueAssistantApp {
     }
 
     if (!selectedResult.shouldReply) {
+      final noReplyReactionTarget = _latestHumanComment(project, thread);
+      if (noReplyReactionTarget != null) {
+        final reacted = await issueTrackerClient.createNoReplyReaction(
+          provider: project.provider,
+          trackerProject: project.repo,
+          commentId: noReplyReactionTarget.id,
+        );
+        _log(
+          'issue=${project.key}#${issue.number} '
+          'no_reply_reaction=${reacted ? "posted" : "unsupported"} '
+          'comment_id=${noReplyReactionTarget.id}',
+        );
+      }
       await database.upsertIssueThread(
         projectKey: project.key,
         issueNumber: issue.number,
@@ -562,6 +575,20 @@ class IssueAssistantApp {
     final latestAuthor =
         thread.latestComment?.userLogin ?? thread.issue.userLogin;
     return _looksLikeBot(project, latestAuthor, latestText);
+  }
+
+  GitHubIssueComment? _latestHumanComment(
+    ProjectConfig project,
+    IssueThread thread,
+  ) {
+    final latestComment = thread.latestComment;
+    if (latestComment == null) {
+      return null;
+    }
+    if (_looksLikeBot(project, latestComment.userLogin, latestComment.body)) {
+      return null;
+    }
+    return latestComment;
   }
 
   int _countResponsesSinceLatestHuman(

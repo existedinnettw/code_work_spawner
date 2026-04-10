@@ -14,6 +14,7 @@ Future<void> writeFakeGhScript({
   Set<int>? postCommentIssueNumbers,
   Map<String, Set<int>>? postCommentIssueNumbersByRepo,
   File? postedBodyFile,
+  File? reactionBodyFile,
   String? viewerLogin,
   bool failViewerLookup = false,
 }) async {
@@ -170,6 +171,41 @@ Future<void> writeFakeGhScript({
         ..writeln('JSON')
         ..writeln('  exit 0')
         ..writeln('fi');
+    }
+  }
+
+  for (final repoEntry in normalizedCommentResponsesByRepo.entries) {
+    final repo = repoEntry.key;
+    for (final issueEntry in repoEntry.value.entries) {
+      for (final comment in issueEntry.value) {
+        final commentId = comment['id'];
+        if (commentId is! int) {
+          continue;
+        }
+        buffer
+          ..writeln(
+            'if [[ "\$1" == "api" && "\$4" == '
+            '"repos/$repo/issues/comments/$commentId/reactions" ]]; then',
+          )
+          ..writeln(r'''  for arg in "$@"; do''')
+          ..writeln(r'''    :''');
+        if (reactionBodyFile != null) {
+          buffer
+            ..writeln(r'''    if [[ "$arg" == content=* ]]; then''')
+            ..writeln(
+              r'''      printf '%s' "${arg#content=}" > '''
+              '"${bashScriptPath(reactionBodyFile.path)}"',
+            )
+            ..writeln(r'''    fi''');
+        }
+        buffer
+          ..writeln(r'''  done''')
+          ..writeln("  cat <<'JSON'")
+          ..writeln(jsonEncode({'id': 990, 'content': 'eyes'}))
+          ..writeln('JSON')
+          ..writeln('  exit 0')
+          ..writeln('fi');
+      }
     }
   }
 

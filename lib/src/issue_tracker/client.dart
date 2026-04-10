@@ -198,6 +198,36 @@ class IssueTrackerClient {
     );
   }
 
+  Future<bool> createNoReplyReaction({
+    required IssueTrackerProvider provider,
+    required String trackerProject,
+    required int commentId,
+  }) async {
+    switch (provider) {
+      case IssueTrackerProvider.github:
+        await _runGhJson([
+          'api',
+          '-X',
+          'POST',
+          _buildApiPath(parseRepositorySlug(trackerProject), [
+            'issues',
+            'comments',
+            '$commentId',
+            'reactions',
+          ]),
+          '-H',
+          'Accept: application/vnd.github+json',
+          '-f',
+          'content=eyes',
+        ]);
+        return true;
+      case IssueTrackerProvider.gitlab:
+      case IssueTrackerProvider.gitea:
+      case IssueTrackerProvider.openproject:
+        return false;
+    }
+  }
+
   Future<String?> getAuthenticatedLogin({
     required IssueTrackerProvider provider,
   }) {
