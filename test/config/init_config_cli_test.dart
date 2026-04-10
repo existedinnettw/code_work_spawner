@@ -1,10 +1,80 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../test_support.dart';
+
+void expectEventSourceUnderIssueTrackerBlock(String yaml) {
+  final lines = const LineSplitter().convert(yaml);
+  final issueTrackerIndex = lines.indexWhere(
+    (line) => RegExp(r'^\s*issueTracker:\s*$').hasMatch(line),
+  );
+  expect(
+    issueTrackerIndex,
+    isNonNegative,
+    reason: 'Expected an issueTracker block in the emitted config.',
+  );
+
+  final issueTrackerIndent = _leadingSpaces(lines[issueTrackerIndex]);
+  var foundNestedEventSource = false;
+
+  for (var index = issueTrackerIndex + 1; index < lines.length; index++) {
+    final line = lines[index];
+    if (line.trim().isEmpty) {
+      continue;
+    }
+    final indent = _leadingSpaces(line);
+    if (indent <= issueTrackerIndent) {
+      break;
+    }
+    if (RegExp(r'^\s*eventSource:\s*$').hasMatch(line)) {
+      foundNestedEventSource = true;
+      break;
+    }
+  }
+
+  expect(
+    foundNestedEventSource,
+    isTrue,
+    reason: 'Expected eventSource to be nested under issueTracker.',
+  );
+}
+
+int _leadingSpaces(String value) => value.length - value.trimLeft().length;
+
+Map<String, dynamic> parseYamlToMap(String yaml) {
+  final decoded = loadYaml(yaml);
+  if (decoded is! YamlMap) {
+    throw const FormatException('Expected YAML root map.');
+  }
+  return _normalizeYamlNode(decoded) as Map<String, dynamic>;
+}
+
+Object? _normalizeYamlNode(Object? value) {
+  if (value is YamlMap) {
+    return value.map(
+      (key, dynamicValue) =>
+          MapEntry(key.toString(), _normalizeYamlNode(dynamicValue)),
+    );
+  }
+  if (value is YamlList) {
+    return value.map(_normalizeYamlNode).toList(growable: false);
+  }
+  if (value is Map) {
+    return value.map(
+      (key, dynamicValue) =>
+          MapEntry(key.toString(), _normalizeYamlNode(dynamicValue)),
+    );
+  }
+  if (value is List) {
+    return value.map(_normalizeYamlNode).toList(growable: false);
+  }
+  return value;
+}
 
 void main() {
   /// ```gherkin
@@ -63,8 +133,19 @@ void main() {
       expect(result.stdout, contains('#   - type: desktop'));
       expect(result.stdout, contains('issueTracker:'));
       expect(result.stdout, contains('provider: github'));
+      expectEventSourceUnderIssueTrackerBlock(result.stdout);
       expect(result.stdout, contains('scm:'));
       expect(result.stdout, contains('projects:'));
+
+      final root = parseYamlToMap(result.stdout);
+      final project =
+          (root['projects'] as Map<String, dynamic>)['sample']
+              as Map<String, dynamic>;
+      final issueTracker = project['issueTracker'] as Map<String, dynamic>;
+      expect(issueTracker['eventSource'], isA<Map<String, dynamic>>());
+      final defaults = root['defaults'] as Map<String, dynamic>;
+      final issueAssistant = defaults['issueAssistant'] as Map<String, dynamic>;
+      expect(issueAssistant.containsKey('eventSource'), isFalse);
 
       // And the printed config is valid when written to disk and loaded.
       await configFile.writeAsString(result.stdout);
@@ -112,9 +193,20 @@ void main() {
       expect(contents, contains('defaults:'));
       expect(contents, contains('issueTracker:'));
       expect(contents, contains('provider: github'));
+      expectEventSourceUnderIssueTrackerBlock(contents);
       expect(contents, contains('# maxResponsesAfterHuman: 1'));
       expect(contents, contains('scm:'));
       expect(contents, contains('projects:'));
+
+      final root = parseYamlToMap(contents);
+      final project =
+          (root['projects'] as Map<String, dynamic>)['sample']
+              as Map<String, dynamic>;
+      final issueTracker = project['issueTracker'] as Map<String, dynamic>;
+      expect(issueTracker['eventSource'], isA<Map<String, dynamic>>());
+      final defaults = root['defaults'] as Map<String, dynamic>;
+      final issueAssistant = defaults['issueAssistant'] as Map<String, dynamic>;
+      expect(issueAssistant.containsKey('eventSource'), isFalse);
       final config = await AppConfig.load(outputFile.path);
       expect(config.projects['sample'], isNotNull);
       expect(config.defaults.maxResponsesAfterHuman, 1);

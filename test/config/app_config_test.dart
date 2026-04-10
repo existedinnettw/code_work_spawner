@@ -65,7 +65,6 @@ void main() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     maxResponsesAfterHuman: 2
     mentionTriggers: ["@helper"]
     prompt: "default {{repo}}"
@@ -723,7 +722,7 @@ projects:
     /// ```gherkin
     /// Scenario: Keep the legacy issue tracker provider as a fallback
     ///   Given a config whose project still sets issueTracker.provider to gitea
-    ///   And the project omits issueAssistant.eventSource.type
+    ///   And the project omits issueTracker.eventSource.type
     ///   When loading the app config from disk
     ///   Then the project keeps the configured Gitea provider
     ///   And the polling event source is rewritten to tea/polling
@@ -743,7 +742,7 @@ projects:
     path: ${tempDir.path}
 ''');
 
-      // And the project omits issueAssistant.eventSource.type.
+      // And the project omits issueTracker.eventSource.type.
 
       // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);

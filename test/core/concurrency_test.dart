@@ -129,7 +129,6 @@ void registerIssueAssistantAppRunOnceConcurrencyTests() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     maxConcurrentIssues: 3
     mentionTriggers: ["@helper"]
     responders:
@@ -137,6 +136,9 @@ defaults:
         command: ${responderScript.path}
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 5m
     repo: owner/sample
     path: ${repoDir.path}
 ''');
@@ -267,13 +269,15 @@ projects:
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
         command: ${responderScript.path}
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 5m
     repo: owner/sample
     path: ${repoDir.path}
 ''');

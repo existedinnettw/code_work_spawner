@@ -142,7 +142,6 @@ exit 1
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -150,11 +149,13 @@ defaults:
         timeout: 1m
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
+      eventSource:
+        pollInterval: 5m
+        type: tea/gosmee
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: tea/gosmee
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
@@ -357,13 +358,14 @@ defaults:
         timeout: 1m
 projects:
   sample:
-    provider: gitea
+    issueTracker:
+      provider: gitea
+      eventSource:
+        type: tea/gosmee
+        reconciliation: continuous
+        reconcileInterval: 1s
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: tea/gosmee
-      reconciliation: continuous
-      reconcileInterval: 1s
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),

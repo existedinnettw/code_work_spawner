@@ -151,16 +151,21 @@ void registerIssueAssistantAppRunOnceMultiProjectTests() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 30s
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
         command: ${responderScript.path}
 projects:
   repoOne:
+    issueTracker:
+      eventSource:
+        pollInterval: 30s
     repo: owner/repo-one
     path: ${repoOneDir.path}
   repoTwo:
+    issueTracker:
+      eventSource:
+        pollInterval: 30s
     repo: owner/repo-two
     path: ${repoTwoDir.path}
 ''');
@@ -288,7 +293,6 @@ projects:
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -296,6 +300,9 @@ defaults:
         timeout: 1m
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 5m
     provider: gitea
     repo: owner/sample
     path: ${repoDir.path}
@@ -378,7 +385,6 @@ projects:
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -387,6 +393,8 @@ defaults:
 projects:
   sample:
     issueTracker:
+      eventSource:
+        pollInterval: 5m
       provider: openproject
     scm:
       provider: github

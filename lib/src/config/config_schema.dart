@@ -91,7 +91,7 @@ class IssueTrackerConfigDocument {
   const IssueTrackerConfigDocument({this.provider, this.eventSource});
 
   final IssueTrackerProvider? provider;
-  final IssueAssistantEventSourceDocument? eventSource;
+  final EventSourceDocument? eventSource;
 
   factory IssueTrackerConfigDocument.fromJson(Map<String, dynamic> json) =>
       _$IssueTrackerConfigDocumentFromJson(json);
@@ -127,7 +127,6 @@ class ScmConfigDocument {
 class IssueAssistantConfigDocument {
   const IssueAssistantConfigDocument({
     this.enabled,
-    this.eventSource,
     this.maxConcurrentIssues,
     this.maxResponsesAfterHuman,
     this.mentionTriggers,
@@ -141,7 +140,6 @@ class IssueAssistantConfigDocument {
   });
 
   final bool? enabled;
-  final IssueAssistantEventSourceDocument? eventSource;
   final int? maxConcurrentIssues;
   final int? maxResponsesAfterHuman;
   final List<String>? mentionTriggers;
@@ -166,8 +164,8 @@ class IssueAssistantConfigDocument {
   explicitToJson: true,
   includeIfNull: false,
 )
-class IssueAssistantEventSourceDocument {
-  const IssueAssistantEventSourceDocument({
+class EventSourceDocument {
+  const EventSourceDocument({
     this.type,
     this.pollInterval,
     this.reconciliation,
@@ -179,12 +177,10 @@ class IssueAssistantEventSourceDocument {
   final IssueTrackerReconciliationKind? reconciliation;
   final String? reconcileInterval;
 
-  factory IssueAssistantEventSourceDocument.fromJson(
-    Map<String, dynamic> json,
-  ) => _$IssueAssistantEventSourceDocumentFromJson(json);
+  factory EventSourceDocument.fromJson(Map<String, dynamic> json) =>
+      _$EventSourceDocumentFromJson(json);
 
-  Map<String, dynamic> toJson() =>
-      _$IssueAssistantEventSourceDocumentToJson(this);
+  Map<String, dynamic> toJson() => _$EventSourceDocumentToJson(this);
 }
 
 @JsonSerializable(
