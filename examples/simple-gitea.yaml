@@ -8,6 +8,7 @@ defaults:
   issueAssistant:
     enabled: true
     maxConcurrentIssues: 3
+    maxResponsesAfterHuman: 1
     mentionTriggers: ["@codex", "@helper"]
     responders:
       - id: codex

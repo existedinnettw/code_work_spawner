@@ -223,6 +223,223 @@ projects:
     );
 
     /// ```gherkin
+    /// Scenario: Respect no_reply for an explicit assistant mention
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing a comment with an explicit assistant mention
+    ///   And a responder that explicitly returns no_reply
+    ///   And an orchestrator-style config pointing to the fake repo and responder
+    ///   When the app processes one polling cycle
+    ///   Then it records the evaluation result as no_reply
+    ///   And it does not post a GitHub comment for that mention
+    /// ```
+    test('Respect no_reply for an explicit assistant mention', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-mentioned-no-reply-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And GitHub issue data containing a comment with an explicit assistant mention.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final issueData = [
+        {
+          'number': 43,
+          'title': 'Need mention handling',
+          'body': 'Please avoid circular replies.',
+          'state': 'open',
+          'html_url': 'https://example.test/issues/43',
+          'updated_at': '2026-04-04T13:30:00Z',
+          'user': {'login': 'reporter'},
+          'labels': const [],
+        },
+      ];
+      final commentsData = [
+        {
+          'id': 430,
+          'body': '@helper no need to answer if the thread is already covered',
+          'html_url': 'https://example.test/issues/43#issuecomment-430',
+          'created_at': '2026-04-04T13:30:00Z',
+          'updated_at': '2026-04-04T13:30:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await writeFakeGhScript(
+        ghScript: ghScript,
+        issueListResponse: issueData,
+        commentResponses: {43: commentsData},
+        ghLog: ghLog,
+      );
+
+      // And a responder that explicitly returns no_reply.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'no_reply',
+        'mode': 'planning',
+        'summary': 'mention acknowledged without posting',
+      });
+
+      // And an orchestrator-style config pointing to the fake repo and responder.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+      );
+
+      // When the app processes one polling cycle.
+      await app.runOnce();
+      final thread = await app.database.findIssueThread('sample', 43);
+      await app.close();
+
+      // Then it records the evaluation result as no_reply.
+      expect(thread, isNotNull);
+      expect(thread!.lastDecision, 'no_reply');
+
+      // And it does not post a GitHub comment for that mention.
+      final logLines = await ghLog.readAsLines();
+      expect(
+        logLines
+            .where(
+              (line) => line.contains('repos/owner/sample/issues/43/comments'),
+            )
+            .length,
+        1,
+      );
+      expect(thread.lastCommentId, isNull);
+    });
+
+    /// ```gherkin
+    /// Scenario: Skip bot-authored mention loops after a human reply budget is exhausted
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And GitHub issue data containing a human mention followed by an assistant-tagged mention
+    ///   And a responder that would reply if invoked
+    ///   And an orchestrator-style config limiting replies after a human comment to one
+    ///   When the app processes one polling cycle
+    ///   Then it does not post a GitHub comment for the bot-authored latest update
+    /// ```
+    test(
+      'Skip bot-authored mention loops after a human reply budget is exhausted',
+      () async {
+        // Given a temporary project checkout that can be used as the local repo path.
+        final sandbox = await Directory.systemTemp.createTemp(
+          'cws-bot-loop-guard-',
+        );
+        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+        await initGitRepo(repoDir);
+
+        // And GitHub issue data containing a human mention followed by an assistant-tagged mention.
+        final ghScript = File(p.join(sandbox.path, 'gh'));
+        final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+        final issueData = [
+          {
+            'number': 44,
+            'title': 'Avoid circular replies',
+            'body': 'Need to stop assistant loops.',
+            'state': 'open',
+            'html_url': 'https://example.test/issues/44',
+            'updated_at': '2026-04-04T14:00:00Z',
+            'user': {'login': 'reporter'},
+            'labels': const [],
+          },
+        ];
+        final commentsData = [
+          {
+            'id': 440,
+            'body': '@helper please review this',
+            'html_url': 'https://example.test/issues/44#issuecomment-440',
+            'created_at': '2026-04-04T14:00:00Z',
+            'updated_at': '2026-04-04T14:00:00Z',
+            'user': {'login': 'reporter'},
+          },
+          {
+            'id': 441,
+            'body':
+                '@helper follow-up from automation\n<!-- code-work-spawner:previous -->',
+            'html_url': 'https://example.test/issues/44#issuecomment-441',
+            'created_at': '2026-04-04T14:05:00Z',
+            'updated_at': '2026-04-04T14:05:00Z',
+            'user': {'login': 'maintainer'},
+          },
+        ];
+        await writeFakeGhScript(
+          ghScript: ghScript,
+          issueListResponse: issueData,
+          commentResponses: {44: commentsData},
+          ghLog: ghLog,
+        );
+
+        // And a responder that would reply if invoked.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await writeResponderScript(responderScript, {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown': 'This should never be posted.',
+          'summary': 'unexpected responder execution',
+        });
+
+        // And an orchestrator-style config limiting replies after a human comment to one.
+        final configFile = File(
+          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    pollInterval: 5m
+    maxResponsesAfterHuman: 1
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+projects:
+  sample:
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          ghCommand: ghScript.path,
+        );
+
+        // When the app processes one polling cycle.
+        await app.runOnce();
+        final thread = await app.database.findIssueThread('sample', 44);
+        await app.close();
+
+        // Then it does not post a GitHub comment for the bot-authored latest update.
+        final logLines = await ghLog.readAsLines();
+        expect(
+          logLines
+              .where(
+                (line) =>
+                    line.contains('repos/owner/sample/issues/44/comments'),
+              )
+              .length,
+          1,
+        );
+        expect(thread, isNotNull);
+        expect(thread!.lastCommentId, isNull);
+      },
+    );
+
+    /// ```gherkin
     /// Scenario: Log raw responder output for debugging
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And GitHub issue data containing an explicit assistant mention

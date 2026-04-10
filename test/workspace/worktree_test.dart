@@ -17,7 +17,7 @@ void registerIssueAssistantAppRunOnceWorktreeTests() {
   /// ```
   group('IssueAssistantApp.runOnce', () {
     /// ```gherkin
-    /// Scenario: Run bug verification mention replies from an ephemeral worktree with issue context
+    /// Scenario: Run bug verification mention evaluation from an ephemeral worktree with issue context
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And GitHub issue data containing a bug verification mention
     ///   And a responder that records its working directory and stdin before returning no_reply
@@ -25,10 +25,10 @@ void registerIssueAssistantAppRunOnceWorktreeTests() {
     ///   When the app processes one polling cycle
     ///   Then the responder runs from an ephemeral worktree instead of the source checkout
     ///   And the responder stdin includes the latest issue comment text
-    ///   And the app still posts a GitHub comment because the thread explicitly mentioned the assistant
+    ///   And the app does not post a GitHub comment when the responder returns no_reply
     /// ```
     test(
-      'Run bug verification mention replies from an ephemeral worktree with issue context',
+      'Run bug verification mention evaluation from an ephemeral worktree with issue context',
       () async {
         // Given a temporary project checkout that can be used as the local repo path.
         final sandbox = await Directory.systemTemp.createTemp(
@@ -128,7 +128,7 @@ projects:
           contains('@helper please verify and reproduce this bug'),
         );
 
-        // And the app still posts a GitHub comment because the thread explicitly mentioned the assistant.
+        // And the app does not post a GitHub comment when the responder returns no_reply.
         final logLines = await ghLog.readAsLines();
         expect(
           logLines
@@ -137,7 +137,7 @@ projects:
                     line.contains('repos/owner/sample/issues/24/comments'),
               )
               .length,
-          2,
+          1,
         );
       },
     );

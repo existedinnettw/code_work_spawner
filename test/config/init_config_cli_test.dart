@@ -59,6 +59,7 @@ void main() {
         result.stdout,
         contains(r'#     webhookUrl: ${CWS_DISCORD_WEBHOOK}'),
       );
+      expect(result.stdout, contains('# maxResponsesAfterHuman: 1'));
       expect(result.stdout, contains('#   - type: desktop'));
       expect(result.stdout, contains('issueTracker:'));
       expect(result.stdout, contains('provider: github'));
@@ -69,6 +70,7 @@ void main() {
       await configFile.writeAsString(result.stdout);
       final config = await AppConfig.load(configFile.path);
       expect(config.projects['sample'], isNotNull);
+      expect(config.defaults.maxResponsesAfterHuman, 1);
     });
 
     /// ```gherkin
@@ -110,10 +112,12 @@ void main() {
       expect(contents, contains('defaults:'));
       expect(contents, contains('issueTracker:'));
       expect(contents, contains('provider: github'));
+      expect(contents, contains('# maxResponsesAfterHuman: 1'));
       expect(contents, contains('scm:'));
       expect(contents, contains('projects:'));
       final config = await AppConfig.load(outputFile.path);
       expect(config.projects['sample'], isNotNull);
+      expect(config.defaults.maxResponsesAfterHuman, 1);
     });
   });
 }

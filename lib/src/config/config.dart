@@ -23,8 +23,9 @@ const String defaultIssueAssistantPrompt = '''
 You are a repository issue thread assistant.
 
 Decide whether to reply. Rules:
-- If the latest trigger explicitly mentions the assistant, always return "reply".
+- Treat an explicit assistant mention as a strong signal to consider replying, not a requirement.
 - If the discussion already has a good enough answer, return "no_reply".
+- Be conservative about replying to bot or automation comments, or comments that only repeat mention triggers without a clear user need.
 - Supported modes are "planning" and "bug_verification".
 - For planning requests, provide practical architecture and implementation guidance.
 - For bug_verification requests, you may inspect the local repository and run temporary tests in the current workspace. Do not create commits or persistent artifacts.
@@ -48,6 +49,9 @@ Repository metadata:
 - issue_url: {{issue_url}}
 - mention_triggers: {{mention_triggers}}
 - trigger: {{trigger}}
+- latest_author_is_bot: {{latest_author_is_bot}}
+- responses_after_human: {{responses_after_human}}
+- max_responses_after_human: {{max_responses_after_human}}
 - capabilities: {{capabilities}}
 
 Issue body:
@@ -143,6 +147,7 @@ class AppConfig {
             pollInterval: '30s',
           ),
           maxConcurrentIssues: 3,
+          maxResponsesAfterHuman: 1,
           mentionTriggers: const ['@codex', '@helper'],
         ),
       ),
@@ -346,6 +351,7 @@ IssueAssistantConfigDocument? _resolveProjectIssueAssistantDocument({
     enabled: issueAssistant?.enabled,
     eventSource: trackerEventSource,
     maxConcurrentIssues: issueAssistant?.maxConcurrentIssues,
+    maxResponsesAfterHuman: issueAssistant?.maxResponsesAfterHuman,
     mentionTriggers: issueAssistant?.mentionTriggers,
     prompt: issueAssistant?.prompt,
     responders: issueAssistant?.responders,
@@ -389,6 +395,7 @@ class IssueAssistantConfig {
     required this.enabled,
     required this.eventSource,
     required this.maxConcurrentIssues,
+    required this.maxResponsesAfterHuman,
     required this.mentionTriggers,
     required this.prompt,
     required this.responders,
@@ -402,6 +409,7 @@ class IssueAssistantConfig {
   final bool enabled;
   final IssueEventSourceConfig eventSource;
   final int maxConcurrentIssues;
+  final int maxResponsesAfterHuman;
   final List<String> mentionTriggers;
   final String prompt;
   final List<CliResponderConfig> responders;
@@ -431,6 +439,7 @@ class IssueAssistantConfig {
       enabled: enabled,
       eventSource: eventSource ?? this.eventSource,
       maxConcurrentIssues: maxConcurrentIssues,
+      maxResponsesAfterHuman: maxResponsesAfterHuman,
       mentionTriggers: mentionTriggers,
       prompt: prompt,
       responders: responders,
@@ -593,6 +602,11 @@ class _IssueAssistantConfigResolver {
         value: overlay?.maxConcurrentIssues,
         fallback: base?.maxConcurrentIssues ?? 3,
         fieldName: 'maxConcurrentIssues',
+      ),
+      maxResponsesAfterHuman: _resolveNonNegativeInt(
+        value: overlay?.maxResponsesAfterHuman,
+        fallback: base?.maxResponsesAfterHuman ?? 1,
+        fieldName: 'maxResponsesAfterHuman',
       ),
       mentionTriggers:
           overlay?.mentionTriggers ?? base?.mentionTriggers ?? const <String>[],
@@ -764,6 +778,20 @@ int _resolvePositiveInt({
   if (resolved < 1) {
     throw FormatException(
       '$fieldName must be an integer greater than or equal to 1.',
+    );
+  }
+  return resolved;
+}
+
+int _resolveNonNegativeInt({
+  required int? value,
+  required int fallback,
+  required String fieldName,
+}) {
+  final resolved = value ?? fallback;
+  if (resolved < 0) {
+    throw FormatException(
+      '$fieldName must be an integer greater than or equal to 0.',
     );
   }
   return resolved;
@@ -1168,6 +1196,7 @@ ${_YamlEmitter().write({'defaults': defaultsSection})}
 
     # capabilities: ["planning", "bug_verification"]
     # commentTag: code-work-spawner
+    # maxResponsesAfterHuman: 1
     # commentPrefixTemplate: |
 ${_commentBlock(defaultCommentPrefixTemplate, indent: '    #   ')}
     # commentFooterTemplate: |
@@ -1196,6 +1225,7 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
+    #   maxResponsesAfterHuman: ${assistant?.maxResponsesAfterHuman ?? 1}
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

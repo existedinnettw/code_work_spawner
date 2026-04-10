@@ -66,6 +66,7 @@ defaults:
   issueAssistant:
     enabled: true
     pollInterval: 5m
+    maxResponsesAfterHuman: 2
     mentionTriggers: ["@helper"]
     prompt: "default {{repo}}"
     commentPrefixTemplate: "> default prefix {{gh_login}}"
@@ -93,6 +94,10 @@ projects:
       expect(config.projects['sample']!.issueAssistant.mentionTriggers, [
         '@helper',
       ]);
+      expect(
+        config.projects['sample']!.issueAssistant.maxResponsesAfterHuman,
+        2,
+      );
       expect(
         config.projects['sample']!.issueAssistant.responders.single.id,
         'fallback',
@@ -1201,6 +1206,7 @@ projects:
         '@codex',
         '@helper',
       ]);
+      expect(config.defaults.maxResponsesAfterHuman, 1);
     });
 
     /// ```gherkin
@@ -1269,6 +1275,36 @@ projects:
         config.projects['sample']!.issueAssistant.eventSource,
         isA<PollingIssueEventSourceConfig>(),
       );
+      expect(config.defaults.maxResponsesAfterHuman, 1);
+    });
+
+    /// ```gherkin
+    /// Scenario: Parse repository example configs
+    ///   Given the checked-in example config files
+    ///   When loading each example through the normal config parser
+    ///   Then each example parses successfully
+    ///   And the mention loop guard default is available in the loaded config
+    /// ```
+    test('Parse repository example configs', () async {
+      // Given the checked-in example config files.
+      final repoRoot = Directory.current.path;
+      final examplePaths = [
+        p.join(repoRoot, 'examples', 'simple-github.yaml'),
+        p.join(repoRoot, 'examples', 'simple-gitlab.yaml'),
+        p.join(repoRoot, 'examples', 'simple-gitea.yaml'),
+      ];
+
+      // When loading each example through the normal config parser.
+      final configs = await Future.wait(examplePaths.map(AppConfig.load));
+
+      // Then each example parses successfully.
+      expect(configs, hasLength(3));
+
+      // And the mention loop guard default is available in the loaded config.
+      for (final config in configs) {
+        expect(config.projects, isNotEmpty);
+        expect(config.defaults.maxResponsesAfterHuman, 1);
+      }
     });
   });
 }
