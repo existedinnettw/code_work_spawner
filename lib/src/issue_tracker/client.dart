@@ -220,7 +220,7 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required String url,
   }) async {
-    final json = await _runTeaJson([
+    final result = await _runCommand(teaCommand, [
       'webhooks',
       'create',
       '--type',
@@ -234,12 +234,30 @@ class IssueTrackerClient {
       repo.fullName,
       url,
     ]);
-    if (json is! Map<String, dynamic>) {
-      throw const FormatException(
-        'tea webhooks create returned an unexpected response.',
+    final stdoutText = result.stdout.toString().trim();
+    if (stdoutText.isEmpty) {
+      throw FormatException(
+        'tea webhooks create returned an empty response for repo '
+        '${repo.fullName}.',
       );
     }
-    return readIntField(json, 'id');
+
+    try {
+      final json = jsonDecode(stdoutText);
+      if (json is Map<String, dynamic>) {
+        return readIntField(json, 'id');
+      }
+    } on FormatException {
+      final webhookId = _extractWebhookIdFromTeaOutput(stdoutText);
+      if (webhookId != null) {
+        return webhookId;
+      }
+    }
+
+    throw FormatException(
+      'tea webhooks create returned an unexpected response for repo '
+      '${repo.fullName}. stdout=${_summarizeOutput(stdoutText)}',
+    );
   }
 
   Future<int> createGitHubIssueWebhook({
@@ -450,7 +468,19 @@ class IssueTrackerClient {
           '-r',
           repo.fullName,
         ]);
-        final items = (json as List<dynamic>? ?? const [])
+        if (json is Map<String, dynamic>) {
+          throw FormatException(
+            'tea api returned an error while listing Gitea issues for '
+            '${repo.fullName}: ${_describeJsonObject(json)}',
+          );
+        }
+        if (json != null && json is! List<dynamic>) {
+          throw FormatException(
+            'tea api returned ${json.runtimeType} while listing Gitea issues '
+            'for ${repo.fullName}; expected a JSON array.',
+          );
+        }
+        final items = (json as List<dynamic>? ?? const <dynamic>[])
             .cast<Map<String, dynamic>>();
         issues.addAll(
           items
@@ -596,6 +626,26 @@ class IssueTrackerClient {
   }
 
   Future<Object?> _runJson(String command, List<String> arguments) async {
+    final result = await _runCommand(command, arguments);
+    final stdoutText = result.stdout.toString().trim();
+    if (stdoutText.isEmpty) {
+      return null;
+    }
+
+    try {
+      return jsonDecode(stdoutText);
+    } on FormatException catch (error) {
+      throw FormatException(
+        'Failed to parse JSON from `$command ${arguments.join(' ')}`: '
+        '${error.message}. stdout=${_summarizeOutput(stdoutText)}',
+      );
+    }
+  }
+
+  Future<ProcessResult> _runCommand(
+    String command,
+    List<String> arguments,
+  ) async {
     final result = await runExternalCommand(command, arguments);
     if (result.exitCode != 0) {
       throw ProcessException(
@@ -605,12 +655,41 @@ class IssueTrackerClient {
         result.exitCode,
       );
     }
+    return result;
+  }
 
-    final stdoutText = result.stdout.toString().trim();
-    if (stdoutText.isEmpty) {
-      return null;
+  int? _extractWebhookIdFromTeaOutput(String stdoutText) {
+    final match = RegExp(
+      r'Webhook created successfully \(ID:\s*(\d+)\)',
+      caseSensitive: false,
+    ).firstMatch(stdoutText);
+    return match == null ? null : int.parse(match.group(1)!);
+  }
+
+  String _describeJsonObject(Map<String, dynamic> json) {
+    final message = json['message']?.toString().trim();
+    final errors = (json['errors'] as List<dynamic>?)
+        ?.map((entry) => entry.toString().trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList(growable: false);
+    final url = json['url']?.toString().trim();
+    final parts = <String>[
+      if (message != null && message.isNotEmpty) 'message=$message',
+      if (errors != null && errors.isNotEmpty) 'errors=${errors.join('; ')}',
+      if (url != null && url.isNotEmpty) 'url=$url',
+    ];
+    if (parts.isEmpty) {
+      return _summarizeOutput(jsonEncode(json));
     }
-    return jsonDecode(stdoutText);
+    return parts.join(' ');
+  }
+
+  String _summarizeOutput(String text, {int maxLength = 240}) {
+    final singleLine = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (singleLine.length <= maxLength) {
+      return singleLine;
+    }
+    return '${singleLine.substring(0, maxLength)}...';
   }
 
   String _buildApiPath(

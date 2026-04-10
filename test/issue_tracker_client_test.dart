@@ -184,4 +184,100 @@ void main() {
       expect(posted.body, 'posted');
     });
   });
+
+  /// ```gherkin
+  /// Feature: Gitea tracker client integration
+  ///
+  ///   As a maintainer debugging Gitea tracker failures
+  ///   I want tea-specific API and webhook errors to preserve the original cause
+  ///   So that misconfigured repos and tea output changes are easy to trace
+  /// ```
+  group('IssueTrackerClient Gitea', () {
+    /// ```gherkin
+    /// Scenario: Read a webhook id from tea plain-text success output
+    ///   Given a fake tea executable whose webhook create command prints plain text instead of JSON
+    ///   When the tracker client creates a Gitea webhook
+    ///   Then it still extracts and returns the created webhook id
+    /// ```
+    test('Read a webhook id from tea plain-text success output', () async {
+      // Given a fake tea executable whose webhook create command prints plain text instead of JSON.
+      final sandbox = await Directory.systemTemp.createTemp('cws-tea-webhook-');
+      final teaScript = File(p.join(sandbox.path, 'tea'));
+      await teaScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\$1" == "webhooks" && "\$2" == "create" ]]; then
+  printf '%s\n' 'Webhook created successfully (ID: 40)'
+  exit 0
+fi
+
+echo "unexpected tea args: \$*" >&2
+exit 1
+''');
+      await makeScriptExecutable(teaScript);
+      final client = IssueTrackerClient(teaCommand: teaScript.path);
+
+      // When the tracker client creates a Gitea webhook.
+      final webhookId = await client.createGiteaIssueWebhook(
+        repo: RepositorySlug('owner', 'sample'),
+        url: 'https://gosmee.example.test/sample',
+      );
+
+      // Then it still extracts and returns the created webhook id.
+      expect(webhookId, 40);
+    });
+
+    /// ```gherkin
+    /// Scenario: Surface Gitea API error details when issue listing returns an error object
+    ///   Given a fake tea executable whose issue list request returns a Gitea error object
+    ///   When the tracker client fetches updated Gitea issues
+    ///   Then it throws a format error that includes the repo and API error details
+    /// ```
+    test(
+      'Surface Gitea API error details when issue listing returns an error object',
+      () async {
+        // Given a fake tea executable whose issue list request returns a Gitea error object.
+        final sandbox = await Directory.systemTemp.createTemp('cws-tea-api-');
+        final teaScript = File(p.join(sandbox.path, 'tea'));
+        await teaScript.writeAsString('''#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues?state=open"* ]]; then
+  cat <<'JSON'
+{"errors":["user redirect does not exist [name: owner]"],"message":"GetUserByName","url":"https://gitea.example.test/api/swagger"}
+JSON
+  exit 0
+fi
+
+echo "unexpected tea args: \$*" >&2
+exit 1
+''');
+        await makeScriptExecutable(teaScript);
+        final client = IssueTrackerClient(teaCommand: teaScript.path);
+
+        // When the tracker client fetches updated Gitea issues.
+        final future = client.fetchUpdatedIssuesForRepos(
+          provider: IssueTrackerProvider.gitea,
+          trackerProjects: const <String>['owner/sample'],
+          since: null,
+        );
+
+        // Then it throws a format error that includes the repo and API error details.
+        await expectLater(
+          future,
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('owner/sample'),
+                contains('GetUserByName'),
+                contains('user redirect does not exist'),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  });
 }
