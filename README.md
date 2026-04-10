@@ -82,7 +82,7 @@ dart run bin/code_work_spawner.dart \
 ```bash
 dart run tool/validate_gherkin_test_format.dart
 dart analyze
-dart test
+dart test -j 1
 ```
 
 ## ref

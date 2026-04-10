@@ -16,18 +16,20 @@ matching provider for existing GitHub, GitLab, and Gitea configs.
 
 GitHub projects default to `gh/polling`, GitLab projects default to
 `glab/polling`, and Gitea projects default to `tea/polling`. OpenProject
-projects default to `op/polling` and currently only support polling. GitLab and
-OpenProject currently support polling only. Because OpenProject issue tracking
+projects default to `op/polling` and currently only support polling. Because
+OpenProject issue tracking
 is not tied to a repository host, OpenProject projects must set
 `scm.provider` explicitly. GitHub projects can switch their long-running runtime to
-`gh/gosmee` or `gh/webhook-forward`, and Gitea projects can switch to
-`tea/gosmee`.
+`gh/gosmee` or `gh/webhook-forward`, GitLab projects can switch to
+`glab/gosmee`, and Gitea projects can switch to `tea/gosmee`.
 For OpenProject, `repo` may be either a numeric project id or an exact project
 name.
 `gh/gosmee` creates a temporary GitHub webhook that targets a generated gosmee
 URL. `gh/webhook-forward` starts `gh webhook forward` for `issues` and
-`issue_comment` events. `tea/gosmee` creates a temporary Gitea webhook that
-targets a generated gosmee URL. Channel-based event sources always run one
+`issue_comment` events. `glab/gosmee` creates a temporary GitLab webhook that
+targets a generated gosmee URL for issue and note events. `tea/gosmee` creates
+a temporary Gitea webhook that targets a generated gosmee URL. Channel-based
+event sources always run one
 startup reconciliation poll. Set `reconciliation: continuous` plus
 `reconcileInterval` to keep periodic reconciliation active for missed-event
 recovery, or use `reconciliation: startup-only` to skip background polling

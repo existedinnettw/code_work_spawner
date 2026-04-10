@@ -26,4 +26,4 @@ jobs:
         run: dart run tool/validate_gherkin_test_format.dart
 
       - name: Run tests
-        run: dart test
+        run: dart test -j 1

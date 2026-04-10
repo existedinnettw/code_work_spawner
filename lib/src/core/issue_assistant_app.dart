@@ -9,6 +9,7 @@ import '../config/config.dart';
 import 'database.dart';
 import '../issue_tracker/issue_event_source/base.dart';
 import '../issue_tracker/issue_event_source/gitea_gosmee.dart';
+import '../issue_tracker/issue_event_source/gitlab_gosmee.dart';
 import '../issue_tracker/issue_event_source/github_gosmee.dart';
 import '../issue_tracker/issue_event_source/github_webhook_forward.dart';
 import '../issue_tracker/issue_tracker_client.dart';
@@ -68,6 +69,11 @@ class IssueAssistantApp {
           IssueTrackerEventSourceKind.teaPolling: pollingIssueEventSource,
           IssueTrackerEventSourceKind.opPolling: pollingIssueEventSource,
           IssueTrackerEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
+            issueTrackerClient: issueTrackerClient,
+            gosmeeCommand: gosmeeCommand,
+            logger: _logger,
+          ),
+          IssueTrackerEventSourceKind.glabGosmee: GitLabGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
             logger: _logger,

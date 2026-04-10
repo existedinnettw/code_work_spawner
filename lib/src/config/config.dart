@@ -685,6 +685,7 @@ String _eventSourceConfigValue(IssueTrackerEventSourceKind value) {
     IssueTrackerEventSourceKind.teaPolling => 'tea/polling',
     IssueTrackerEventSourceKind.opPolling => 'op/polling',
     IssueTrackerEventSourceKind.ghGosmee => 'gh/gosmee',
+    IssueTrackerEventSourceKind.glabGosmee => 'glab/gosmee',
     IssueTrackerEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
     IssueTrackerEventSourceKind.teaGosmee => 'tea/gosmee',
   };
@@ -697,6 +698,7 @@ bool _isPollingEventSource(IssueTrackerEventSourceKind value) {
     IssueTrackerEventSourceKind.teaPolling => true,
     IssueTrackerEventSourceKind.opPolling => true,
     IssueTrackerEventSourceKind.ghGosmee => false,
+    IssueTrackerEventSourceKind.glabGosmee => false,
     IssueTrackerEventSourceKind.ghWebhookForward => false,
     IssueTrackerEventSourceKind.teaGosmee => false,
   };
@@ -959,6 +961,7 @@ IssueTrackerProvider _issueTrackerProviderForEventSource(
     IssueTrackerEventSourceKind.teaPolling => IssueTrackerProvider.gitea,
     IssueTrackerEventSourceKind.opPolling => IssueTrackerProvider.openproject,
     IssueTrackerEventSourceKind.ghGosmee => IssueTrackerProvider.github,
+    IssueTrackerEventSourceKind.glabGosmee => IssueTrackerProvider.gitlab,
     IssueTrackerEventSourceKind.ghWebhookForward => IssueTrackerProvider.github,
     IssueTrackerEventSourceKind.teaGosmee => IssueTrackerProvider.gitea,
   };

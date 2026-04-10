@@ -19,10 +19,14 @@ projects:
   sample-gitlab:
     issueTracker:
       provider: gitlab
-      # GitLab currently supports polling.
+      # Use glab/gosmee for long-running runs.
       eventSource:
         type: glab/polling
         pollInterval: 30s
+      # eventSource:
+      #   type: glab/gosmee
+      #   reconciliation: continuous
+      #   reconcileInterval: 30s
     scm:
       provider: gitlab
     repo: group/subgroup/repo
