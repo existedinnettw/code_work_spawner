@@ -104,13 +104,15 @@ void registerIssueAssistantAppRunOnceNotificationTests() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
         command: ${responderScript.path}
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 5m
     repo: owner/sample
     path: ${repoDir.path}
 ''');
@@ -228,7 +230,6 @@ projects:
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -241,6 +242,9 @@ defaults:
         username: code-work-spawner
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 5m
     repo: owner/sample
     path: ${repoDir.path}
 ''');

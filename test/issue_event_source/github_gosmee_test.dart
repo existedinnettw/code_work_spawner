@@ -100,7 +100,6 @@ void registerIssueAssistantAppRunGitHubGosmeeTests() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 5m
     mentionTriggers: ["@helper"]
     responders:
       - id: primary
@@ -108,11 +107,13 @@ defaults:
         timeout: 1m
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
+      eventSource:
+        pollInterval: 5m
+        type: gh/gosmee
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: gh/gosmee
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),

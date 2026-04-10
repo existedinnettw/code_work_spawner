@@ -3,16 +3,15 @@
 The repo uses an Agent Orchestrator style YAML config with `defaults` and `projects`.
 
 Project entries can override `issueAssistant` fields when a repo needs a
-different prompt, mention triggers, responder chain, notification list, or
-event source.
+different prompt, mention triggers, responder chain, or notification list.
 
 Each project also has separate tracker and SCM config. `issueTracker.provider`
 selects the logical tracker family, `issueTracker.eventSource.type` selects the
 concrete adapter used to receive updates, and `scm.provider` selects how
 temporary repo workspaces are prepared for responders. Legacy top-level project
-`provider` and legacy `issueAssistant.eventSource` are still accepted during
-load for backward compatibility. When `scm` is omitted it defaults to a
-matching provider for existing GitHub, GitLab, and Gitea configs.
+`provider` is still accepted during load for backward compatibility. When `scm` is
+omitted it defaults to a matching provider for existing GitHub, GitLab, and
+Gitea configs.
 
 GitHub projects default to `gh/polling`, GitLab projects default to
 `glab/polling`, and Gitea projects default to `tea/polling`. OpenProject

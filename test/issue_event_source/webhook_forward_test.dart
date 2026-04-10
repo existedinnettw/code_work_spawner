@@ -89,11 +89,12 @@ defaults:
         timeout: 1m
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
+      eventSource:
+        type: gh/webhook-forward
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: gh/webhook-forward
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
@@ -188,11 +189,12 @@ defaults:
     enabled: true
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
+      eventSource:
+        type: gh/webhook-forward
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: gh/webhook-forward
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
@@ -368,13 +370,14 @@ defaults:
         timeout: 1m
 projects:
   sample:
-    provider: github
+    issueTracker:
+      provider: github
+      eventSource:
+        type: gh/webhook-forward
+        reconciliation: continuous
+        reconcileInterval: 1s
     repo: owner/sample
     path: ${repoDir.path}
-    issueAssistant:
-      eventSource: gh/webhook-forward
-      reconciliation: continuous
-      reconcileInterval: 1s
 ''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),

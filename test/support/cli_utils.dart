@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import '../../bin/code_work_spawner.dart' as _cliEntry;
+import '../../bin/code_work_spawner.dart' as cli_entry;
 
 /// Result of a [runCli] invocation.
 typedef CliResult = ({int exitCode, String stdout, String stderr});
@@ -18,7 +18,7 @@ Future<CliResult> runCli(List<String> args) async {
   exitCode = 0;
   try {
     await IOOverrides.runZoned<Future<void>>(
-      () => _cliEntry.main(args),
+      () => cli_entry.main(args),
       stdout: () => out,
       stderr: () => err,
     );

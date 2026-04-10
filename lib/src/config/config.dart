@@ -142,10 +142,6 @@ class AppConfig {
       defaults: AppConfigDefaultsDocument(
         issueAssistant: IssueAssistantConfigDocument(
           enabled: true,
-          eventSource: IssueAssistantEventSourceDocument(
-            type: IssueTrackerEventSourceKind.ghPolling,
-            pollInterval: '30s',
-          ),
           maxConcurrentIssues: 3,
           maxResponsesAfterHuman: 1,
           mentionTriggers: const ['@codex', '@helper'],
@@ -155,6 +151,10 @@ class AppConfig {
         'sample': ProjectConfigDocument(
           issueTracker: IssueTrackerConfigDocument(
             provider: IssueTrackerProvider.github,
+            eventSource: EventSourceDocument(
+              type: IssueTrackerEventSourceKind.ghPolling,
+              pollInterval: '30s',
+            ),
           ),
           scm: ScmConfigDocument(provider: ScmProvider.github),
           repo: 'owner/repo',
@@ -207,15 +207,12 @@ class ProjectConfig {
       );
     }
 
-    final resolvedIssueAssistantDocument =
-        _resolveProjectIssueAssistantDocument(
-          key: key,
-          issueTracker: document.issueTracker,
-          issueAssistant: document.issueAssistant,
-        );
-    final hasExplicitEventSourceType =
-        resolvedIssueAssistantDocument?.eventSource?.type != null;
-    var issueAssistant = defaultAssistant.merge(resolvedIssueAssistantDocument);
+    final eventSourceDocument = document.issueTracker?.eventSource;
+    final hasExplicitEventSourceType = eventSourceDocument?.type != null;
+    var issueAssistant = defaultAssistant.merge(
+      document.issueAssistant,
+      eventSourceOverlay: eventSourceDocument,
+    );
     final configuredProvider =
         document.issueTracker?.provider ?? document.provider;
     final inferredProvider = _issueTrackerProviderForEventSource(
@@ -225,7 +222,7 @@ class ProjectConfig {
         configuredProvider != null &&
         configuredProvider != inferredProvider) {
       throw FormatException(
-        'projects.$key.issueAssistant.eventSource '
+        'projects.$key.issueTracker.eventSource '
         '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
         'implies issue tracker provider ${inferredProvider.name}, '
         'but the legacy configured provider is ${configuredProvider.name}.',
@@ -329,50 +326,6 @@ class ProjectConfig {
   }
 }
 
-IssueAssistantConfigDocument? _resolveProjectIssueAssistantDocument({
-  required String key,
-  required IssueTrackerConfigDocument? issueTracker,
-  required IssueAssistantConfigDocument? issueAssistant,
-}) {
-  final trackerEventSource = issueTracker?.eventSource;
-  final assistantEventSource = issueAssistant?.eventSource;
-  if (trackerEventSource != null &&
-      assistantEventSource != null &&
-      !_eventSourceDocumentsMatch(trackerEventSource, assistantEventSource)) {
-    throw FormatException(
-      'projects.$key.issueTracker.eventSource and '
-      'projects.$key.issueAssistant.eventSource must match when both are set.',
-    );
-  }
-  if (trackerEventSource == null) {
-    return issueAssistant;
-  }
-  return IssueAssistantConfigDocument(
-    enabled: issueAssistant?.enabled,
-    eventSource: trackerEventSource,
-    maxConcurrentIssues: issueAssistant?.maxConcurrentIssues,
-    maxResponsesAfterHuman: issueAssistant?.maxResponsesAfterHuman,
-    mentionTriggers: issueAssistant?.mentionTriggers,
-    prompt: issueAssistant?.prompt,
-    responders: issueAssistant?.responders,
-    capabilities: issueAssistant?.capabilities,
-    notifications: issueAssistant?.notifications,
-    commentTag: issueAssistant?.commentTag,
-    commentPrefixTemplate: issueAssistant?.commentPrefixTemplate,
-    commentFooterTemplate: issueAssistant?.commentFooterTemplate,
-  );
-}
-
-bool _eventSourceDocumentsMatch(
-  IssueAssistantEventSourceDocument left,
-  IssueAssistantEventSourceDocument right,
-) {
-  return left.type == right.type &&
-      left.pollInterval == right.pollInterval &&
-      left.reconciliation == right.reconciliation &&
-      left.reconcileInterval == right.reconcileInterval;
-}
-
 class ScmConfig {
   const ScmConfig({required this.provider});
 
@@ -423,14 +376,18 @@ class IssueAssistantConfig {
     IssueAssistantConfigDocument? document,
   ) {
     return const _IssueAssistantConfigResolver()
-        .resolve(base: null, overlay: null)
+        .resolve(base: null, overlay: null, eventSourceOverlay: null)
         .merge(document);
   }
 
-  IssueAssistantConfig merge(IssueAssistantConfigDocument? overlay) {
+  IssueAssistantConfig merge(
+    IssueAssistantConfigDocument? overlay, {
+    EventSourceDocument? eventSourceOverlay,
+  }) {
     return const _IssueAssistantConfigResolver().resolve(
       base: this,
       overlay: overlay,
+      eventSourceOverlay: eventSourceOverlay,
     );
   }
 
@@ -589,6 +546,7 @@ class _IssueAssistantConfigResolver {
   IssueAssistantConfig resolve({
     required IssueAssistantConfig? base,
     required IssueAssistantConfigDocument? overlay,
+    required EventSourceDocument? eventSourceOverlay,
   }) {
     final responders = overlay?.responders;
     final notifications = overlay?.notifications;
@@ -596,7 +554,7 @@ class _IssueAssistantConfigResolver {
       enabled: overlay?.enabled ?? base?.enabled ?? true,
       eventSource: _resolveEventSource(
         base: base?.eventSource,
-        overlay: overlay?.eventSource,
+        overlay: eventSourceOverlay,
       ),
       maxConcurrentIssues: _resolvePositiveInt(
         value: overlay?.maxConcurrentIssues,
@@ -643,7 +601,7 @@ class _IssueAssistantConfigResolver {
 
   IssueEventSourceConfig _resolveEventSource({
     required IssueEventSourceConfig? base,
-    required IssueAssistantEventSourceDocument? overlay,
+    required EventSourceDocument? overlay,
   }) {
     final type =
         overlay?.type ?? base?.type ?? IssueTrackerEventSourceKind.ghPolling;
@@ -873,13 +831,6 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
     final issueAssistant = defaults['issueAssistant'];
     if (issueAssistant is Map<String, dynamic>) {
       _assertCamelCaseMap(issueAssistant, scope: 'defaults.issueAssistant');
-      final eventSource = issueAssistant['eventSource'];
-      if (eventSource is Map<String, dynamic>) {
-        _assertCamelCaseMap(
-          eventSource,
-          scope: 'defaults.issueAssistant.eventSource',
-        );
-      }
       final responders = issueAssistant['responders'];
       if (responders is List) {
         for (final responder in responders) {
@@ -937,13 +888,6 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
           issueAssistant,
           scope: 'projects.${entry.key}.issueAssistant',
         );
-        final eventSource = issueAssistant['eventSource'];
-        if (eventSource is Map<String, dynamic>) {
-          _assertCamelCaseMap(
-            eventSource,
-            scope: 'projects.${entry.key}.issueAssistant.eventSource',
-          );
-        }
         final responders = issueAssistant['responders'];
         if (responders is List) {
           for (final responder in responders) {
@@ -996,6 +940,15 @@ IssueTrackerProvider _issueTrackerProviderForEventSource(
 }
 
 void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
+  IssueTrackerEventSourceKind providerDefaultEventSourceType(String? provider) {
+    return switch (provider) {
+      'gitlab' => IssueTrackerEventSourceKind.glabPolling,
+      'gitea' => IssueTrackerEventSourceKind.teaPolling,
+      'openproject' => IssueTrackerEventSourceKind.opPolling,
+      _ => IssueTrackerEventSourceKind.ghPolling,
+    };
+  }
+
   void normalizeProjectTracker(Map<String, dynamic> project) {
     final repo = project['repo'];
     if (repo != null && repo is! String) {
@@ -1040,58 +993,6 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
     issueTracker['eventSource'] = normalizedEventSource;
   }
 
-  void normalizeIssueAssistant(
-    Map<String, dynamic> issueAssistant, {
-    required IssueTrackerEventSourceKind? defaultType,
-  }) {
-    final rawEventSource = issueAssistant['eventSource'];
-    Map<String, dynamic>? normalizedEventSource;
-
-    if (rawEventSource is String) {
-      normalizedEventSource = <String, dynamic>{'type': rawEventSource};
-    } else if (rawEventSource is Map<String, dynamic>) {
-      normalizedEventSource = Map<String, dynamic>.from(rawEventSource);
-    } else if (rawEventSource == null) {
-      if (issueAssistant.containsKey('pollInterval') ||
-          issueAssistant.containsKey('reconciliation') ||
-          issueAssistant.containsKey('reconcileInterval')) {
-        normalizedEventSource = <String, dynamic>{};
-      }
-    }
-
-    if (normalizedEventSource == null) {
-      return;
-    }
-
-    if (defaultType != null && !normalizedEventSource.containsKey('type')) {
-      normalizedEventSource['type'] = _eventSourceConfigValue(defaultType);
-    }
-
-    for (final field in [
-      'pollInterval',
-      'reconciliation',
-      'reconcileInterval',
-    ]) {
-      if (issueAssistant.containsKey(field) &&
-          !normalizedEventSource.containsKey(field)) {
-        normalizedEventSource[field] = issueAssistant.remove(field);
-      }
-    }
-
-    issueAssistant['eventSource'] = normalizedEventSource;
-  }
-
-  final defaults = root['defaults'];
-  if (defaults is Map<String, dynamic>) {
-    final issueAssistant = defaults['issueAssistant'];
-    if (issueAssistant is Map<String, dynamic>) {
-      normalizeIssueAssistant(
-        issueAssistant,
-        defaultType: IssueTrackerEventSourceKind.ghPolling,
-      );
-    }
-  }
-
   final projects = root['projects'];
   if (projects is Map<String, dynamic>) {
     for (final entry in projects.entries) {
@@ -1101,45 +1002,15 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
       }
       normalizeProjectTracker(project);
       final issueTracker = project['issueTracker'];
+      final projectDefaultType = providerDefaultEventSourceType(
+        (project['issueTracker'] as Map<String, dynamic>?)?['provider']
+                as String? ??
+            project['provider'] as String?,
+      );
       if (issueTracker is Map<String, dynamic>) {
         normalizeIssueTrackerEventSource(
           issueTracker,
-          defaultType: switch (issueTracker['provider'] as String?) {
-            'gitlab' => IssueTrackerEventSourceKind.glabPolling,
-            'gitea' => IssueTrackerEventSourceKind.teaPolling,
-            'openproject' => IssueTrackerEventSourceKind.opPolling,
-            _ => IssueTrackerEventSourceKind.ghPolling,
-          },
-        );
-      }
-      final issueAssistant = project['issueAssistant'];
-      if (issueAssistant is! Map<String, dynamic>) {
-        if (issueTracker is Map<String, dynamic> &&
-            issueTracker['eventSource'] is Map<String, dynamic>) {
-          project['issueAssistant'] = <String, dynamic>{
-            'eventSource': Map<String, dynamic>.from(
-              issueTracker['eventSource'] as Map<String, dynamic>,
-            ),
-          };
-        }
-        continue;
-      }
-      normalizeIssueAssistant(
-        issueAssistant,
-        defaultType: switch ((project['issueTracker']
-                as Map<String, dynamic>?)?['provider']
-            as String?) {
-          'gitlab' => IssueTrackerEventSourceKind.glabPolling,
-          'gitea' => IssueTrackerEventSourceKind.teaPolling,
-          'openproject' => IssueTrackerEventSourceKind.opPolling,
-          _ => IssueTrackerEventSourceKind.ghPolling,
-        },
-      );
-      if (issueTracker is Map<String, dynamic> &&
-          issueTracker['eventSource'] == null &&
-          issueAssistant['eventSource'] is Map<String, dynamic>) {
-        issueTracker['eventSource'] = Map<String, dynamic>.from(
-          issueAssistant['eventSource'] as Map<String, dynamic>,
+          defaultType: projectDefaultType,
         );
       }
     }

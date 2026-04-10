@@ -72,9 +72,11 @@ void registerIssueAssistantAppRunRetryTests() {
 defaults:
   issueAssistant:
     enabled: true
-    pollInterval: 1s
 projects:
   sample:
+    issueTracker:
+      eventSource:
+        pollInterval: 1s
     repo: owner/sample
     path: ${repoDir.path}
 ''');
