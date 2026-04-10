@@ -135,6 +135,7 @@ ProjectConfig _project({
         reconcileInterval: const Duration(seconds: 30),
       ),
       maxConcurrentIssues: 3,
+      maxResponsesAfterHuman: 1,
       mentionTriggers: const ['@helper'],
       prompt: defaultIssueAssistantPrompt,
       responders: const <CliResponderConfig>[],

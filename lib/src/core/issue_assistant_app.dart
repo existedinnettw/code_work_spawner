@@ -200,9 +200,11 @@ class IssueAssistantApp {
     }
 
     final trigger = _determineTrigger(project, thread);
+    final skipReason = _skipEvaluationReason(project, thread);
     _log(
       'evaluate issue=${project.key}#${issue.number} '
-      'comments=${thread.comments.length} trigger=$trigger',
+      'comments=${thread.comments.length} trigger=$trigger'
+      '${skipReason == null ? "" : " skip_reason=$skipReason"}',
     );
     final baseNotificationContext = NotificationContext(
       projectKey: project.key,
@@ -238,7 +240,21 @@ class IssueAssistantApp {
     );
 
     await database.updateJobStatus(jobId, JobStatus.running);
-    final forceReply = trigger == 'mention';
+    if (skipReason != null) {
+      _log('issue=${project.key}#${issue.number} skipped $skipReason');
+      await database.upsertIssueThread(
+        projectKey: project.key,
+        issueNumber: issue.number,
+        fingerprint: fingerprint,
+        updatedAt: issue.updatedAt,
+        lastEvaluatedFingerprint: fingerprint,
+        lastDecision: record?.lastDecision,
+        lastCommentId: record?.lastCommentId,
+        lastCommentUrl: record?.lastCommentUrl,
+      );
+      await database.updateJobStatus(jobId, JobStatus.skipped);
+      return;
+    }
     final prompt = _buildPrompt(
       project: project,
       thread: thread,
@@ -289,7 +305,6 @@ class IssueAssistantApp {
             project: project,
             thread: thread,
             prompt: prompt,
-            forceReply: forceReply,
             workspacePath: workspacePath,
           );
           await database.addExecutionRun(
@@ -313,15 +328,7 @@ class IssueAssistantApp {
             'title="${thread.issue.title}", '
             'decision=${result.decision}, mode=${result.mode}',
           );
-          selectedResult = forceReply && !result.shouldReply
-              ? result.forceReply()
-              : result;
-          if (forceReply && !result.shouldReply) {
-            _log(
-              'responder=${responder.id} issue=${project.key}#${issue.number} '
-              'override=force_reply original_decision=${result.decision}',
-            );
-          }
+          selectedResult = result;
           break;
         } catch (error) {
           lastError = error;
@@ -508,6 +515,16 @@ class IssueAssistantApp {
       ).convert(thread.toJson()),
       'mention_triggers': project.issueAssistant.mentionTriggers.join(', '),
       'trigger': trigger,
+      'max_responses_after_human': project.issueAssistant.maxResponsesAfterHuman
+          .toString(),
+      'responses_after_human': _countResponsesSinceLatestHuman(
+        project,
+        thread,
+      ).toString(),
+      'latest_author_is_bot': _isLatestContributionFromBot(
+        project,
+        thread,
+      ).toString(),
       'capabilities': project.issueAssistant.capabilities
           .map((capability) => capability.name)
           .join(', '),
@@ -523,18 +540,56 @@ class IssueAssistantApp {
     final mention = project.issueAssistant.mentionTriggers.any(
       (trigger) => latestTextLower.contains(trigger.toLowerCase()),
     );
-    if (mention && !_looksLikeBot(project, latestAuthor)) {
+    if (mention && !_looksLikeBot(project, latestAuthor, latestText)) {
       return 'mention';
     }
     return 'update';
   }
 
-  bool _looksLikeBot(ProjectConfig project, String login) {
+  String? _skipEvaluationReason(ProjectConfig project, IssueThread thread) {
+    if (_isLatestContributionFromBot(project, thread)) {
+      return 'latest_comment_from_bot';
+    }
+    if (_countResponsesSinceLatestHuman(project, thread) >=
+        project.issueAssistant.maxResponsesAfterHuman) {
+      return 'max_responses_after_human_reached';
+    }
+    return null;
+  }
+
+  bool _isLatestContributionFromBot(ProjectConfig project, IssueThread thread) {
+    final latestText = thread.latestComment?.body ?? thread.issue.body;
+    final latestAuthor =
+        thread.latestComment?.userLogin ?? thread.issue.userLogin;
+    return _looksLikeBot(project, latestAuthor, latestText);
+  }
+
+  int _countResponsesSinceLatestHuman(
+    ProjectConfig project,
+    IssueThread thread,
+  ) {
+    var count = 0;
+    for (final comment in thread.comments.reversed) {
+      if (_looksLikeBot(project, comment.userLogin, comment.body)) {
+        count += 1;
+        continue;
+      }
+      return count;
+    }
+    return count;
+  }
+
+  bool _looksLikeBot(ProjectConfig project, String login, String body) {
     final lower = login.toLowerCase();
     if (lower.endsWith('[bot]')) {
       return true;
     }
-    return lower.contains(project.issueAssistant.commentTag.toLowerCase());
+    if (lower.contains(project.issueAssistant.commentTag.toLowerCase())) {
+      return true;
+    }
+    final tagPrefix =
+        '<!-- ${project.issueAssistant.commentTag.toLowerCase()}:';
+    return body.toLowerCase().contains(tagPrefix);
   }
 
   bool _looksLikeBugVerification(IssueThread thread) {

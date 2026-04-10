@@ -12,7 +12,6 @@ class CliResponderRunner {
     required ProjectConfig project,
     required IssueThread thread,
     required String prompt,
-    required bool forceReply,
     required String workspacePath,
   }) async {
     final context = <String, String>{
@@ -23,7 +22,6 @@ class CliResponderRunner {
       'workspace_path': workspacePath,
       'issue_number': thread.issue.number.toString(),
       'thread_json': encodePrettyJson(thread.toJson()),
-      'force_reply': forceReply.toString(),
     };
 
     final stdinPayload = renderTemplate(responder.stdinTemplate, context);
@@ -38,7 +36,6 @@ class CliResponderRunner {
         'CWS_PROJECT_PATH': project.path,
         'CWS_WORKSPACE_PATH': workspacePath,
         'CWS_ISSUE_NUMBER': thread.issue.number.toString(),
-        'CWS_FORCE_REPLY': forceReply.toString(),
       },
     );
 
@@ -189,23 +186,6 @@ class ResponderResult {
   final String rawStderr;
 
   bool get shouldReply => decision == 'reply';
-
-  ResponderResult forceReply() {
-    final fallbackMarkdown = markdown.isNotEmpty
-        ? markdown
-        : summary.isNotEmpty
-        ? summary
-        : 'I reviewed the latest mention but could not produce a detailed response.';
-    return ResponderResult(
-      responderId: responderId,
-      decision: 'reply',
-      mode: mode,
-      markdown: fallbackMarkdown,
-      summary: summary,
-      rawStdout: rawStdout,
-      rawStderr: rawStderr,
-    );
-  }
 
   factory ResponderResult.fromJson(
     Map<String, dynamic> json, {

@@ -129,6 +129,7 @@ class IssueAssistantConfigDocument {
     this.enabled,
     this.eventSource,
     this.maxConcurrentIssues,
+    this.maxResponsesAfterHuman,
     this.mentionTriggers,
     this.prompt,
     this.responders,
@@ -142,6 +143,7 @@ class IssueAssistantConfigDocument {
   final bool? enabled;
   final IssueAssistantEventSourceDocument? eventSource;
   final int? maxConcurrentIssues;
+  final int? maxResponsesAfterHuman;
   final List<String>? mentionTriggers;
   final String? prompt;
   final List<CliResponderConfigDocument>? responders;
