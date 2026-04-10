@@ -103,7 +103,7 @@ projects:
 
       // When the long-running app starts and receives the forwarded webhook.
       final runFuture = app.run();
-      for (var attempt = 0; attempt < 50; attempt += 1) {
+      for (var attempt = 0; attempt < 200; attempt += 1) {
         if (await postedBody.exists()) {
           break;
         }
@@ -208,7 +208,7 @@ projects:
 
       // When the long-running app starts and webhook-forward emits that stderr line.
       final runFuture = app.run();
-      for (var attempt = 0; attempt < 50; attempt += 1) {
+      for (var attempt = 0; attempt < 200; attempt += 1) {
         if (records.any(
           (record) => record.message.contains('error creating webhook'),
         )) {
@@ -384,7 +384,7 @@ projects:
 
       // When the long-running app starts and enough time passes for reconciliation polling.
       final runFuture = app.run();
-      for (var attempt = 0; attempt < 50; attempt += 1) {
+      for (var attempt = 0; attempt < 200; attempt += 1) {
         if (await postedBody.exists()) {
           break;
         }

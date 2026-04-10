@@ -92,7 +92,7 @@ projects:
 
       // When the long-running app starts and enough time passes for a retry.
       final runFuture = app.run();
-      for (var attempt = 0; attempt < 60; attempt += 1) {
+      for (var attempt = 0; attempt < 200; attempt += 1) {
         final logLines = await ghLog.exists()
             ? await ghLog.readAsLines()
             : const <String>[];

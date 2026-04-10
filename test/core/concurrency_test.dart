@@ -108,13 +108,13 @@ void registerIssueAssistantAppRunOnceConcurrencyTests() {
         ghLog: ghLog,
       );
 
-      // And a responder that sleeps for one second while logging each issue number.
+      // And a responder that sleeps long enough to expose overlap despite scheduler jitter.
       final eventLog = File(p.join(sandbox.path, 'responder-events.log'));
       final responderScript = File(p.join(sandbox.path, 'responder-slow.sh'));
       await writeDelayedLoggingResponderScript(
         responderScript,
         eventLog: eventLog,
-        delay: const Duration(seconds: 1),
+        delay: const Duration(seconds: 2),
         response: {
           'decision': 'reply',
           'mode': 'planning',
