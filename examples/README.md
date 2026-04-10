@@ -79,3 +79,8 @@ Start from [`examples/simple-github.yaml`](simple-github.yaml) for GitHub,
 [`examples/simple-openproject.yaml`](simple-openproject.yaml) for OpenProject.
 This repo uses `dataDir`, `worktreeDir`, and `projects`, and uses
 `worktreeDir` for bug-verification worktrees.
+
+## tea + windows
+
+The `tea` CLI has known severe issues on Windows due to lipgloss/v2 query console color. We had bypass it by read config file of `tea` directly, but only token login is supported. And need to config a default login through `tea login default <LOGIN>`.
+
