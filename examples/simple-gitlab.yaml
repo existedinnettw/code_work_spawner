@@ -7,10 +7,6 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    # GitLab currently supports polling.
-    eventSource:
-      type: glab/polling
-      pollInterval: 30s
     maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
     responders:
@@ -23,6 +19,10 @@ projects:
   sample-gitlab:
     issueTracker:
       provider: gitlab
+      # GitLab currently supports polling.
+      eventSource:
+        type: glab/polling
+        pollInterval: 30s
     scm:
       provider: gitlab
     repo: group/subgroup/repo

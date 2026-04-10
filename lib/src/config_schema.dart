@@ -88,9 +88,10 @@ class ProjectConfigDocument {
   includeIfNull: false,
 )
 class IssueTrackerConfigDocument {
-  const IssueTrackerConfigDocument({this.provider});
+  const IssueTrackerConfigDocument({this.provider, this.eventSource});
 
   final IssueTrackerProvider? provider;
+  final IssueAssistantEventSourceDocument? eventSource;
 
   factory IssueTrackerConfigDocument.fromJson(Map<String, dynamic> json) =>
       _$IssueTrackerConfigDocumentFromJson(json);

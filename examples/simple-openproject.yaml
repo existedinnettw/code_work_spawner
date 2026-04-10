@@ -8,9 +8,6 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    eventSource:
-      type: op/polling
-      pollInterval: 30s
     maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
     responders:
@@ -23,6 +20,9 @@ projects:
   sample-openproject:
     issueTracker:
       provider: openproject
+      eventSource:
+        type: op/polling
+        pollInterval: 30s
     scm:
       provider: github
     # OpenProject project name or numeric project id.
