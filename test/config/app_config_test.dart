@@ -642,6 +642,40 @@ projects:
     });
 
     /// ```gherkin
+    /// Scenario: Load glab/gosmee as the issue event source
+    ///   Given a GitLab project config that opts into glab/gosmee
+    ///   When loading the app config from disk
+    ///   Then the project keeps glab/gosmee as its event source
+    ///   And the GitLab provider remains valid for that project
+    /// ```
+    test('Load glab/gosmee as the issue event source', () async {
+      // Given a GitLab project config that opts into glab/gosmee.
+      final tempDir = await Directory.systemTemp.createTemp('cws-glab-gosmee-');
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      eventSource:
+        type: glab/gosmee
+    repo: group/subgroup/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps glab/gosmee as its event source.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource.type,
+        IssueTrackerEventSourceKind.glabGosmee,
+      );
+
+      // And the GitLab provider remains valid for that project.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.gitlab);
+    });
+
+    /// ```gherkin
     /// Scenario: Load an explicit SCM provider separately from the issue tracker
     ///   Given a config whose project uses a Gitea issue tracker and GitHub SCM
     ///   When loading the app config from disk
@@ -760,6 +794,55 @@ projects:
         ),
       );
     });
+
+    /// ```gherkin
+    /// Scenario: Reject a legacy GitHub provider that conflicts with glab/gosmee
+    ///   Given a project config whose legacy tracker provider is github
+    ///   And the project opts into glab/gosmee
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear conflict error
+    /// ```
+    test(
+      'Reject a legacy GitHub provider that conflicts with glab/gosmee',
+      () async {
+        // Given a project config whose legacy tracker provider is github.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'cws-glab-gosmee-github-',
+        );
+        final configFile = File(
+          p.join(tempDir.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: github
+      eventSource:
+        type: glab/gosmee
+    repo: group/subgroup/sample
+    path: ${tempDir.path}
+''');
+
+        // And the project opts into glab/gosmee.
+
+        // When loading the app config from disk.
+        final load = AppConfig.load(configFile.path);
+
+        // Then loading fails with a clear conflict error.
+        await expectLater(
+          load,
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains(
+                'glab/gosmee implies issue tracker provider gitlab, but the legacy configured provider is github',
+              ),
+            ),
+          ),
+        );
+      },
+    );
 
     /// ```gherkin
     /// Scenario: Load gh/webhook-forward as the issue event source

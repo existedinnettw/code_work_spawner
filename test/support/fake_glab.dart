@@ -13,6 +13,7 @@ Future<void> writeFakeGlabScript({
   File? postedBodyFile,
   String? viewerLogin,
   bool failViewerLookup = false,
+  Map<String, int>? webhookIdsByRepo,
 }) async {
   final normalizedPostCommentIssueNumbersByRepo =
       postCommentIssueNumbersByRepo ??
@@ -115,6 +116,25 @@ Future<void> writeFakeGlabScript({
         ..writeln('  exit 0')
         ..writeln('fi');
     }
+  }
+
+  for (final entry in (webhookIdsByRepo ?? const <String, int>{}).entries) {
+    final repo = Uri.encodeComponent(entry.key);
+    buffer
+      ..writeln(
+        'if [[ "\$1" == "api" && "\$4" == "projects/$repo/hooks" && "\$3" == "POST" ]]; then',
+      )
+      ..writeln("  cat <<'JSON'")
+      ..writeln(jsonEncode({'id': entry.value}))
+      ..writeln('JSON')
+      ..writeln('  exit 0')
+      ..writeln('fi')
+      ..writeln(
+        'if [[ "\$1" == "api" && "\$4" == "projects/$repo/hooks/${entry.value}" && "\$3" == "DELETE" ]]; then',
+      )
+      ..writeln("  printf '%s\\n' 'null'")
+      ..writeln('  exit 0')
+      ..writeln('fi');
   }
 
   buffer

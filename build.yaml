@@ -3,7 +3,7 @@ targets:
     builders:
       drift_dev:
         generate_for:
-          - lib/src/database.dart
+          - lib/src/core/database.dart
       json_serializable:
         generate_for:
-          - lib/src/config_schema.dart
+          - lib/src/config/config_schema.dart

@@ -119,6 +119,11 @@ class RoutedIssueEventSource implements IssueEventSource {
           yield IssueTrackerEventSourceKind.ghPolling;
         }
         yield IssueTrackerEventSourceKind.ghGosmee;
+      case IssueTrackerEventSourceKind.glabGosmee:
+        if (_shouldRunContinuousReconciliation(project)) {
+          yield IssueTrackerEventSourceKind.glabPolling;
+        }
+        yield IssueTrackerEventSourceKind.glabGosmee;
       case IssueTrackerEventSourceKind.ghWebhookForward:
         if (_shouldRunContinuousReconciliation(project)) {
           yield IssueTrackerEventSourceKind.ghPolling;

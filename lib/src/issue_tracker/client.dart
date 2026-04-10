@@ -272,6 +272,32 @@ class IssueTrackerClient {
     return readIntField(json, 'id');
   }
 
+  Future<int> createGitLabIssueWebhook({
+    required String trackerProject,
+    required String url,
+  }) async {
+    final json = await _runGlabJson([
+      'api',
+      '-X',
+      'POST',
+      _buildGitLabApiPath(trackerProject, ['hooks']),
+      '-f',
+      'url=$url',
+      '-f',
+      'issues_events=true',
+      '-f',
+      'note_events=true',
+      '-f',
+      'push_events=false',
+    ]);
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException(
+        'glab api webhook create returned an unexpected response.',
+      );
+    }
+    return readIntField(json, 'id');
+  }
+
   Future<void> deleteGitHubWebhook({
     required RepositorySlug repo,
     required int webhookId,
@@ -295,6 +321,18 @@ class IssueTrackerClient {
       '-r',
       repo.fullName,
       '$webhookId',
+    ]);
+  }
+
+  Future<void> deleteGitLabWebhook({
+    required String trackerProject,
+    required int webhookId,
+  }) async {
+    await _runGlabJson([
+      'api',
+      '-X',
+      'DELETE',
+      _buildGitLabApiPath(trackerProject, ['hooks', '$webhookId']),
     ]);
   }
 

@@ -259,6 +259,8 @@ enum IssueTrackerEventSourceKind {
   opPolling,
   @JsonValue('gh/gosmee')
   ghGosmee,
+  @JsonValue('glab/gosmee')
+  glabGosmee,
   @JsonValue('gh/webhook-forward')
   ghWebhookForward,
   @JsonValue('tea/gosmee')
