@@ -88,9 +88,10 @@ class ProjectConfigDocument {
   includeIfNull: false,
 )
 class IssueTrackerConfigDocument {
-  const IssueTrackerConfigDocument({this.provider});
+  const IssueTrackerConfigDocument({this.provider, this.eventSource});
 
   final IssueTrackerProvider? provider;
+  final IssueAssistantEventSourceDocument? eventSource;
 
   factory IssueTrackerConfigDocument.fromJson(Map<String, dynamic> json) =>
       _$IssueTrackerConfigDocumentFromJson(json);
@@ -171,9 +172,9 @@ class IssueAssistantEventSourceDocument {
     this.reconcileInterval,
   });
 
-  final IssueAssistantEventSourceKind? type;
+  final IssueTrackerEventSourceKind? type;
   final String? pollInterval;
-  final IssueAssistantReconciliationKind? reconciliation;
+  final IssueTrackerReconciliationKind? reconciliation;
   final String? reconcileInterval;
 
   factory IssueAssistantEventSourceDocument.fromJson(
@@ -247,7 +248,7 @@ class NotificationConfigDocument {
 @JsonEnum(fieldRename: FieldRename.snake)
 enum AssistantCapability { planning, bugVerification }
 
-enum IssueAssistantEventSourceKind {
+enum IssueTrackerEventSourceKind {
   @JsonValue('gh/polling')
   ghPolling,
   @JsonValue('glab/polling')
@@ -264,7 +265,7 @@ enum IssueAssistantEventSourceKind {
   teaGosmee,
 }
 
-enum IssueAssistantReconciliationKind {
+enum IssueTrackerReconciliationKind {
   @JsonValue('startup-only')
   startupOnly,
   @JsonValue('continuous')

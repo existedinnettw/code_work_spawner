@@ -11,8 +11,8 @@ import 'config_schema.dart';
 export 'config_schema.dart'
     show
         AssistantCapability,
-        IssueAssistantEventSourceKind,
-        IssueAssistantReconciliationKind,
+        IssueTrackerEventSourceKind,
+        IssueTrackerReconciliationKind,
         IssueTrackerProvider,
         ScmProvider,
         NotificationConfigDocument,
@@ -139,7 +139,7 @@ class AppConfig {
         issueAssistant: IssueAssistantConfigDocument(
           enabled: true,
           eventSource: IssueAssistantEventSourceDocument(
-            type: IssueAssistantEventSourceKind.ghPolling,
+            type: IssueTrackerEventSourceKind.ghPolling,
             pollInterval: '30s',
           ),
           maxConcurrentIssues: 3,
@@ -202,10 +202,33 @@ class ProjectConfig {
       );
     }
 
-    final provider =
-        document.issueTracker?.provider ??
-        document.provider ??
-        IssueTrackerProvider.github;
+    final resolvedIssueAssistantDocument =
+        _resolveProjectIssueAssistantDocument(
+          key: key,
+          issueTracker: document.issueTracker,
+          issueAssistant: document.issueAssistant,
+        );
+    final hasExplicitEventSourceType =
+        resolvedIssueAssistantDocument?.eventSource?.type != null;
+    var issueAssistant = defaultAssistant.merge(resolvedIssueAssistantDocument);
+    final configuredProvider =
+        document.issueTracker?.provider ?? document.provider;
+    final inferredProvider = _issueTrackerProviderForEventSource(
+      issueAssistant.eventSource.type,
+    );
+    if (hasExplicitEventSourceType &&
+        configuredProvider != null &&
+        configuredProvider != inferredProvider) {
+      throw FormatException(
+        'projects.$key.issueAssistant.eventSource '
+        '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
+        'implies issue tracker provider ${inferredProvider.name}, '
+        'but the legacy configured provider is ${configuredProvider.name}.',
+      );
+    }
+    final provider = hasExplicitEventSourceType
+        ? inferredProvider
+        : configuredProvider ?? inferredProvider;
     if (provider == IssueTrackerProvider.gitlab) {
       _validateGitLabProjectPath(repo, field: 'projects.$key.repo');
     }
@@ -213,15 +236,14 @@ class ProjectConfig {
     if (document.scm?.provider == null && fallbackScmProvider == null) {
       throw FormatException(
         'projects.$key.scm.provider is required for '
-        'issueTracker.provider: ${provider.name}.',
+        'issue tracking provider: ${provider.name}.',
       );
     }
     final scm = ScmConfig.fromDocument(
       document.scm,
       fallbackProvider: fallbackScmProvider,
     );
-    var issueAssistant = defaultAssistant.merge(document.issueAssistant);
-    if (document.issueAssistant?.eventSource?.type == null &&
+    if (!hasExplicitEventSourceType &&
         issueAssistant.eventSource is PollingIssueEventSourceConfig) {
       issueAssistant = issueAssistant.copyWith(
         eventSource:
@@ -229,58 +251,17 @@ class ProjectConfig {
                 .copyWith(
                   type: switch (provider) {
                     IssueTrackerProvider.github =>
-                      IssueAssistantEventSourceKind.ghPolling,
+                      IssueTrackerEventSourceKind.ghPolling,
                     IssueTrackerProvider.gitlab =>
-                      IssueAssistantEventSourceKind.glabPolling,
+                      IssueTrackerEventSourceKind.glabPolling,
                     IssueTrackerProvider.gitea =>
-                      IssueAssistantEventSourceKind.teaPolling,
+                      IssueTrackerEventSourceKind.teaPolling,
                     IssueTrackerProvider.openproject =>
-                      IssueAssistantEventSourceKind.opPolling,
+                      IssueTrackerEventSourceKind.opPolling,
                   },
                 ),
       );
     }
-    switch (issueAssistant.eventSource.type) {
-      case IssueAssistantEventSourceKind.ghPolling:
-      case IssueAssistantEventSourceKind.ghGosmee:
-      case IssueAssistantEventSourceKind.ghWebhookForward:
-        if (provider != IssueTrackerProvider.github) {
-          throw FormatException(
-            'projects.$key.issueAssistant.eventSource '
-            '${_eventSourceConfigValue(issueAssistant.eventSource.type)} '
-            'requires issueTracker.provider: github.',
-          );
-        }
-      case IssueAssistantEventSourceKind.glabPolling:
-        if (provider != IssueTrackerProvider.gitlab) {
-          throw FormatException(
-            'projects.$key.issueAssistant.eventSource glab/polling '
-            'requires issueTracker.provider: gitlab.',
-          );
-        }
-      case IssueAssistantEventSourceKind.teaPolling:
-        if (provider != IssueTrackerProvider.gitea) {
-          throw FormatException(
-            'projects.$key.issueAssistant.eventSource tea/polling '
-            'requires issueTracker.provider: gitea.',
-          );
-        }
-      case IssueAssistantEventSourceKind.teaGosmee:
-        if (provider != IssueTrackerProvider.gitea) {
-          throw FormatException(
-            'projects.$key.issueAssistant.eventSource tea/gosmee '
-            'requires issueTracker.provider: gitea.',
-          );
-        }
-      case IssueAssistantEventSourceKind.opPolling:
-        if (provider != IssueTrackerProvider.openproject) {
-          throw FormatException(
-            'projects.$key.issueAssistant.eventSource op/polling '
-            'requires issueTracker.provider: openproject.',
-          );
-        }
-    }
-
     if (provider == IssueTrackerProvider.openproject && repo.trim().isEmpty) {
       throw FormatException(
         'Invalid OpenProject project reference for projects.$key.repo: '
@@ -341,6 +322,49 @@ class ProjectConfig {
       );
     }
   }
+}
+
+IssueAssistantConfigDocument? _resolveProjectIssueAssistantDocument({
+  required String key,
+  required IssueTrackerConfigDocument? issueTracker,
+  required IssueAssistantConfigDocument? issueAssistant,
+}) {
+  final trackerEventSource = issueTracker?.eventSource;
+  final assistantEventSource = issueAssistant?.eventSource;
+  if (trackerEventSource != null &&
+      assistantEventSource != null &&
+      !_eventSourceDocumentsMatch(trackerEventSource, assistantEventSource)) {
+    throw FormatException(
+      'projects.$key.issueTracker.eventSource and '
+      'projects.$key.issueAssistant.eventSource must match when both are set.',
+    );
+  }
+  if (trackerEventSource == null) {
+    return issueAssistant;
+  }
+  return IssueAssistantConfigDocument(
+    enabled: issueAssistant?.enabled,
+    eventSource: trackerEventSource,
+    maxConcurrentIssues: issueAssistant?.maxConcurrentIssues,
+    mentionTriggers: issueAssistant?.mentionTriggers,
+    prompt: issueAssistant?.prompt,
+    responders: issueAssistant?.responders,
+    capabilities: issueAssistant?.capabilities,
+    notifications: issueAssistant?.notifications,
+    commentTag: issueAssistant?.commentTag,
+    commentPrefixTemplate: issueAssistant?.commentPrefixTemplate,
+    commentFooterTemplate: issueAssistant?.commentFooterTemplate,
+  );
+}
+
+bool _eventSourceDocumentsMatch(
+  IssueAssistantEventSourceDocument left,
+  IssueAssistantEventSourceDocument right,
+) {
+  return left.type == right.type &&
+      left.pollInterval == right.pollInterval &&
+      left.reconciliation == right.reconciliation &&
+      left.reconcileInterval == right.reconcileInterval;
 }
 
 class ScmConfig {
@@ -422,7 +446,7 @@ class IssueAssistantConfig {
 sealed class IssueEventSourceConfig {
   const IssueEventSourceConfig({required this.type});
 
-  final IssueAssistantEventSourceKind type;
+  final IssueTrackerEventSourceKind type;
 
   bool get usesChannelEventSource => !_isPollingEventSource(type);
 }
@@ -436,7 +460,7 @@ class PollingIssueEventSourceConfig extends IssueEventSourceConfig {
   final Duration pollInterval;
 
   PollingIssueEventSourceConfig copyWith({
-    IssueAssistantEventSourceKind? type,
+    IssueTrackerEventSourceKind? type,
     Duration? pollInterval,
   }) {
     return PollingIssueEventSourceConfig(
@@ -453,12 +477,12 @@ class ChannelIssueEventSourceConfig extends IssueEventSourceConfig {
     required this.reconcileInterval,
   });
 
-  final IssueAssistantReconciliationKind reconciliation;
+  final IssueTrackerReconciliationKind reconciliation;
   final Duration reconcileInterval;
 
   ChannelIssueEventSourceConfig copyWith({
-    IssueAssistantEventSourceKind? type,
-    IssueAssistantReconciliationKind? reconciliation,
+    IssueTrackerEventSourceKind? type,
+    IssueTrackerReconciliationKind? reconciliation,
     Duration? reconcileInterval,
   }) {
     return ChannelIssueEventSourceConfig(
@@ -608,7 +632,7 @@ class _IssueAssistantConfigResolver {
     required IssueAssistantEventSourceDocument? overlay,
   }) {
     final type =
-        overlay?.type ?? base?.type ?? IssueAssistantEventSourceKind.ghPolling;
+        overlay?.type ?? base?.type ?? IssueTrackerEventSourceKind.ghPolling;
     if (_isPollingEventSource(type)) {
       if (overlay?.reconciliation != null ||
           overlay?.reconcileInterval != null) {
@@ -643,7 +667,7 @@ class _IssueAssistantConfigResolver {
           switch (base) {
             ChannelIssueEventSourceConfig(:final reconciliation) =>
               reconciliation,
-            _ => IssueAssistantReconciliationKind.continuous,
+            _ => IssueTrackerReconciliationKind.continuous,
           },
       reconcileInterval: overlay?.reconcileInterval != null
           ? _parseDuration(overlay!.reconcileInterval!)
@@ -654,27 +678,27 @@ class _IssueAssistantConfigResolver {
   }
 }
 
-String _eventSourceConfigValue(IssueAssistantEventSourceKind value) {
+String _eventSourceConfigValue(IssueTrackerEventSourceKind value) {
   return switch (value) {
-    IssueAssistantEventSourceKind.ghPolling => 'gh/polling',
-    IssueAssistantEventSourceKind.glabPolling => 'glab/polling',
-    IssueAssistantEventSourceKind.teaPolling => 'tea/polling',
-    IssueAssistantEventSourceKind.opPolling => 'op/polling',
-    IssueAssistantEventSourceKind.ghGosmee => 'gh/gosmee',
-    IssueAssistantEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
-    IssueAssistantEventSourceKind.teaGosmee => 'tea/gosmee',
+    IssueTrackerEventSourceKind.ghPolling => 'gh/polling',
+    IssueTrackerEventSourceKind.glabPolling => 'glab/polling',
+    IssueTrackerEventSourceKind.teaPolling => 'tea/polling',
+    IssueTrackerEventSourceKind.opPolling => 'op/polling',
+    IssueTrackerEventSourceKind.ghGosmee => 'gh/gosmee',
+    IssueTrackerEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
+    IssueTrackerEventSourceKind.teaGosmee => 'tea/gosmee',
   };
 }
 
-bool _isPollingEventSource(IssueAssistantEventSourceKind value) {
+bool _isPollingEventSource(IssueTrackerEventSourceKind value) {
   return switch (value) {
-    IssueAssistantEventSourceKind.ghPolling => true,
-    IssueAssistantEventSourceKind.glabPolling => true,
-    IssueAssistantEventSourceKind.teaPolling => true,
-    IssueAssistantEventSourceKind.opPolling => true,
-    IssueAssistantEventSourceKind.ghGosmee => false,
-    IssueAssistantEventSourceKind.ghWebhookForward => false,
-    IssueAssistantEventSourceKind.teaGosmee => false,
+    IssueTrackerEventSourceKind.ghPolling => true,
+    IssueTrackerEventSourceKind.glabPolling => true,
+    IssueTrackerEventSourceKind.teaPolling => true,
+    IssueTrackerEventSourceKind.opPolling => true,
+    IssueTrackerEventSourceKind.ghGosmee => false,
+    IssueTrackerEventSourceKind.ghWebhookForward => false,
+    IssueTrackerEventSourceKind.teaGosmee => false,
   };
 }
 
@@ -864,6 +888,13 @@ void _assertCamelCaseConfigKeys(Map<String, dynamic> root) {
           issueTracker,
           scope: 'projects.${entry.key}.issueTracker',
         );
+        final issueTrackerEventSource = issueTracker['eventSource'];
+        if (issueTrackerEventSource is Map<String, dynamic>) {
+          _assertCamelCaseMap(
+            issueTrackerEventSource,
+            scope: 'projects.${entry.key}.issueTracker.eventSource',
+          );
+        }
       }
       _assertCamelCaseMap(project, scope: 'projects.${entry.key}');
       final scm = project['scm'];
@@ -919,6 +950,20 @@ ScmProvider? _defaultScmProviderForTracker(IssueTrackerProvider provider) {
   };
 }
 
+IssueTrackerProvider _issueTrackerProviderForEventSource(
+  IssueTrackerEventSourceKind type,
+) {
+  return switch (type) {
+    IssueTrackerEventSourceKind.ghPolling => IssueTrackerProvider.github,
+    IssueTrackerEventSourceKind.glabPolling => IssueTrackerProvider.gitlab,
+    IssueTrackerEventSourceKind.teaPolling => IssueTrackerProvider.gitea,
+    IssueTrackerEventSourceKind.opPolling => IssueTrackerProvider.openproject,
+    IssueTrackerEventSourceKind.ghGosmee => IssueTrackerProvider.github,
+    IssueTrackerEventSourceKind.ghWebhookForward => IssueTrackerProvider.github,
+    IssueTrackerEventSourceKind.teaGosmee => IssueTrackerProvider.gitea,
+  };
+}
+
 void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
   void normalizeProjectTracker(Map<String, dynamic> project) {
     final repo = project['repo'];
@@ -942,9 +987,31 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
     }
   }
 
+  void normalizeIssueTrackerEventSource(
+    Map<String, dynamic> issueTracker, {
+    required IssueTrackerEventSourceKind? defaultType,
+  }) {
+    final rawEventSource = issueTracker['eventSource'];
+    Map<String, dynamic>? normalizedEventSource;
+
+    if (rawEventSource is String) {
+      normalizedEventSource = <String, dynamic>{'type': rawEventSource};
+    } else if (rawEventSource is Map<String, dynamic>) {
+      normalizedEventSource = Map<String, dynamic>.from(rawEventSource);
+    } else {
+      return;
+    }
+
+    if (defaultType != null && !normalizedEventSource.containsKey('type')) {
+      normalizedEventSource['type'] = _eventSourceConfigValue(defaultType);
+    }
+
+    issueTracker['eventSource'] = normalizedEventSource;
+  }
+
   void normalizeIssueAssistant(
     Map<String, dynamic> issueAssistant, {
-    required IssueAssistantEventSourceKind? defaultType,
+    required IssueTrackerEventSourceKind? defaultType,
   }) {
     final rawEventSource = issueAssistant['eventSource'];
     Map<String, dynamic>? normalizedEventSource;
@@ -989,7 +1056,7 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
     if (issueAssistant is Map<String, dynamic>) {
       normalizeIssueAssistant(
         issueAssistant,
-        defaultType: IssueAssistantEventSourceKind.ghPolling,
+        defaultType: IssueTrackerEventSourceKind.ghPolling,
       );
     }
   }
@@ -1002,8 +1069,28 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
         continue;
       }
       normalizeProjectTracker(project);
+      final issueTracker = project['issueTracker'];
+      if (issueTracker is Map<String, dynamic>) {
+        normalizeIssueTrackerEventSource(
+          issueTracker,
+          defaultType: switch (issueTracker['provider'] as String?) {
+            'gitlab' => IssueTrackerEventSourceKind.glabPolling,
+            'gitea' => IssueTrackerEventSourceKind.teaPolling,
+            'openproject' => IssueTrackerEventSourceKind.opPolling,
+            _ => IssueTrackerEventSourceKind.ghPolling,
+          },
+        );
+      }
       final issueAssistant = project['issueAssistant'];
       if (issueAssistant is! Map<String, dynamic>) {
+        if (issueTracker is Map<String, dynamic> &&
+            issueTracker['eventSource'] is Map<String, dynamic>) {
+          project['issueAssistant'] = <String, dynamic>{
+            'eventSource': Map<String, dynamic>.from(
+              issueTracker['eventSource'] as Map<String, dynamic>,
+            ),
+          };
+        }
         continue;
       }
       normalizeIssueAssistant(
@@ -1011,11 +1098,19 @@ void _normalizeLegacyEventSourceConfig(Map<String, dynamic> root) {
         defaultType: switch ((project['issueTracker']
                 as Map<String, dynamic>?)?['provider']
             as String?) {
-          'gitlab' => IssueAssistantEventSourceKind.glabPolling,
-          'gitea' => IssueAssistantEventSourceKind.teaPolling,
-          _ => IssueAssistantEventSourceKind.ghPolling,
+          'gitlab' => IssueTrackerEventSourceKind.glabPolling,
+          'gitea' => IssueTrackerEventSourceKind.teaPolling,
+          'openproject' => IssueTrackerEventSourceKind.opPolling,
+          _ => IssueTrackerEventSourceKind.ghPolling,
         },
       );
+      if (issueTracker is Map<String, dynamic> &&
+          issueTracker['eventSource'] == null &&
+          issueAssistant['eventSource'] is Map<String, dynamic>) {
+        issueTracker['eventSource'] = Map<String, dynamic>.from(
+          issueAssistant['eventSource'] as Map<String, dynamic>,
+        );
+      }
     }
   }
 }
@@ -1098,10 +1193,6 @@ ${_YamlEmitter().write({'projects': projectsSection})}
 
     # issueAssistant:
     #   enabled: ${assistant?.enabled ?? true}
-    #   eventSource:
-    #     type: gh/gosmee
-    #     reconciliation: startup-only
-    #     reconcileInterval: 30s
     #   mentionTriggers: ["@helper"]
     # sessionPrefix: sample
 '''

@@ -7,14 +7,6 @@ worktreeDir: ~/.worktrees
 defaults:
   issueAssistant:
     enabled: true
-    # Use tea/gosmee for long-running runs.
-    eventSource:
-      type: tea/polling
-      pollInterval: 30s
-    # eventSource:
-    #   type: tea/gosmee
-    #   reconciliation: startup-only
-    #   reconcileInterval: 30s
     maxConcurrentIssues: 3
     mentionTriggers: ["@codex", "@helper"]
     responders:
@@ -27,6 +19,14 @@ projects:
   sample-gitea:
     issueTracker:
       provider: gitea
+      # Use tea/gosmee for long-running runs.
+      eventSource:
+        type: tea/polling
+        pollInterval: 30s
+      # eventSource:
+      #   type: tea/gosmee
+      #   reconciliation: startup-only
+      #   reconcileInterval: 30s
     scm:
       provider: gitea
     repo: owner/repo

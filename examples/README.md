@@ -6,11 +6,13 @@ Project entries can override `issueAssistant` fields when a repo needs a
 different prompt, mention triggers, responder chain, notification list, or
 event source.
 
-Each project also has a separate SCM config. `issueTracker.provider` selects
-the issue tracker integration, while `scm.provider` selects how temporary repo
-workspaces are prepared for responders. Legacy top-level project `provider` is
-still accepted during load for backward compatibility. When `scm` is omitted
-it defaults to a matching provider for existing GitHub, GitLab, and Gitea configs.
+Each project also has separate tracker and SCM config. `issueTracker.provider`
+selects the logical tracker family, `issueTracker.eventSource.type` selects the
+concrete adapter used to receive updates, and `scm.provider` selects how
+temporary repo workspaces are prepared for responders. Legacy top-level project
+`provider` and legacy `issueAssistant.eventSource` are still accepted during
+load for backward compatibility. When `scm` is omitted it defaults to a
+matching provider for existing GitHub, GitLab, and Gitea configs.
 
 GitHub projects default to `gh/polling`, GitLab projects default to
 `glab/polling`, and Gitea projects default to `tea/polling`. OpenProject
@@ -32,11 +34,12 @@ recovery, or use `reconciliation: startup-only` to skip background polling
 after startup. `--once` still uses a single polling reconciliation cycle so
 existing backlog handling keeps working.
 
-Use a nested `issueAssistant.eventSource` object so source-specific fields stay
-grouped with the selected source type. For example:
+Use a nested `issueTracker.eventSource` object so adapter-specific fields stay
+grouped with the selected adapter key. For example:
 
 ```yaml
-issueAssistant:
+issueTracker:
+  provider: github
   eventSource:
     type: gh/webhook-forward
     reconciliation: continuous
@@ -44,7 +47,8 @@ issueAssistant:
 ```
 
 ```yaml
-issueAssistant:
+issueTracker:
+  provider: github
   eventSource:
     type: gh/polling
     pollInterval: 30s

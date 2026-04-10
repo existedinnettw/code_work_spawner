@@ -78,7 +78,7 @@ void main() {
         issueAssistant: IssueAssistantConfig(
           enabled: true,
           eventSource: const PollingIssueEventSourceConfig(
-            type: IssueAssistantEventSourceKind.ghPolling,
+            type: IssueTrackerEventSourceKind.ghPolling,
             pollInterval: Duration(seconds: 30),
           ),
           maxConcurrentIssues: 3,
@@ -131,7 +131,7 @@ void main() {
         issueAssistant: IssueAssistantConfig(
           enabled: true,
           eventSource: const PollingIssueEventSourceConfig(
-            type: IssueAssistantEventSourceKind.glabPolling,
+            type: IssueTrackerEventSourceKind.glabPolling,
             pollInterval: Duration(seconds: 30),
           ),
           maxConcurrentIssues: 3,

@@ -63,21 +63,21 @@ class IssueAssistantApp {
       issueTrackerClient: issueTrackerClient,
       issueEventSource: RoutedIssueEventSource(
         sources: {
-          IssueAssistantEventSourceKind.ghPolling: pollingIssueEventSource,
-          IssueAssistantEventSourceKind.glabPolling: pollingIssueEventSource,
-          IssueAssistantEventSourceKind.teaPolling: pollingIssueEventSource,
-          IssueAssistantEventSourceKind.opPolling: pollingIssueEventSource,
-          IssueAssistantEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
+          IssueTrackerEventSourceKind.ghPolling: pollingIssueEventSource,
+          IssueTrackerEventSourceKind.glabPolling: pollingIssueEventSource,
+          IssueTrackerEventSourceKind.teaPolling: pollingIssueEventSource,
+          IssueTrackerEventSourceKind.opPolling: pollingIssueEventSource,
+          IssueTrackerEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
             logger: _logger,
           ),
-          IssueAssistantEventSourceKind.ghWebhookForward:
+          IssueTrackerEventSourceKind.ghWebhookForward:
               GitHubWebhookForwardIssueEventSource(
                 issueTrackerClient: issueTrackerClient,
                 logger: _logger,
               ),
-          IssueAssistantEventSourceKind.teaGosmee: GiteaGosmeeIssueEventSource(
+          IssueTrackerEventSourceKind.teaGosmee: GiteaGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
             logger: _logger,

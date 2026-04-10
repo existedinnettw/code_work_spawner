@@ -407,21 +407,22 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Load an explicit Gitea issue tracker provider
-    ///   Given a config whose project sets issueTracker.provider to gitea
+    /// Scenario: Infer a Gitea issue tracker provider from the event source
+    ///   Given a config whose project sets tea/polling as the event source type
     ///   When loading the app config from disk
-    ///   Then the project keeps the configured Gitea provider
+    ///   Then the project infers the Gitea provider
     ///   And the repository slug still parses normally
     /// ```
-    test('Load an explicit Gitea issue tracker provider', () async {
-      // Given a config whose project sets issueTracker.provider to gitea.
+    test('Infer a Gitea issue tracker provider from the event source', () async {
+      // Given a config whose project sets tea/polling as the event source type.
       final tempDir = await Directory.systemTemp.createTemp('cws-gitea-');
       final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
     issueTracker:
-      provider: gitea
+      eventSource:
+        type: tea/polling
     repo: owner/sample
     path: ${tempDir.path}
 ''');
@@ -429,7 +430,7 @@ projects:
       // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);
 
-      // Then the project keeps the configured Gitea provider.
+      // Then the project infers the Gitea provider.
       expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
       expect(config.projects['sample']!.scm.provider, ScmProvider.gitea);
 
@@ -437,26 +438,27 @@ projects:
       expect(config.projects['sample']!.repoSlug!.fullName, 'owner/sample');
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.teaPolling,
+        IssueTrackerEventSourceKind.teaPolling,
       );
     });
 
     /// ```gherkin
-    /// Scenario: Load an explicit GitLab issue tracker provider
-    ///   Given a config whose project sets issueTracker.provider to gitlab
+    /// Scenario: Infer a GitLab issue tracker provider from the event source
+    ///   Given a config whose project sets glab/polling as the event source type
     ///   When loading the app config from disk
-    ///   Then the project keeps the configured GitLab provider
+    ///   Then the project infers the GitLab provider
     ///   And the project uses GitLab polling and GitLab SCM by default
     /// ```
-    test('Load an explicit GitLab issue tracker provider', () async {
-      // Given a config whose project sets issueTracker.provider to gitlab.
+    test('Infer a GitLab issue tracker provider from the event source', () async {
+      // Given a config whose project sets glab/polling as the event source type.
       final tempDir = await Directory.systemTemp.createTemp('cws-gitlab-');
       final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
     issueTracker:
-      provider: gitlab
+      eventSource:
+        type: glab/polling
     repo: group/subgroup/sample
     path: ${tempDir.path}
 ''');
@@ -464,67 +466,75 @@ projects:
       // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);
 
-      // Then the project keeps the configured GitLab provider.
+      // Then the project infers the GitLab provider.
       expect(config.projects['sample']!.provider, IssueTrackerProvider.gitlab);
 
       // And the project uses GitLab polling and GitLab SCM by default.
       expect(config.projects['sample']!.scm.provider, ScmProvider.gitlab);
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.glabPolling,
+        IssueTrackerEventSourceKind.glabPolling,
       );
       expect(config.projects['sample']!.repo, 'group/subgroup/sample');
     });
 
     /// ```gherkin
-    /// Scenario: Load an explicit OpenProject issue tracker provider
-    ///   Given a config whose project sets issueTracker.provider to openproject
+    /// Scenario: Infer an OpenProject issue tracker provider from the event source
+    ///   Given a config whose project sets op/polling as the event source type
     ///   And the project declares an explicit SCM provider
     ///   When loading the app config from disk
-    ///   Then the project keeps the configured OpenProject provider
+    ///   Then the project infers the OpenProject provider
     ///   And the project uses op/polling as its default issue event source
     /// ```
-    test('Load an explicit OpenProject issue tracker provider', () async {
-      // Given a config whose project sets issueTracker.provider to openproject.
-      final tempDir = await Directory.systemTemp.createTemp('cws-openproject-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
+    test(
+      'Infer an OpenProject issue tracker provider from the event source',
+      () async {
+        // Given a config whose project sets op/polling as the event source type.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'cws-openproject-',
+        );
+        final configFile = File(
+          p.join(tempDir.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
 projects:
   sample:
     issueTracker:
-      provider: openproject
+      eventSource:
+        type: op/polling
     scm:
       provider: github
     repo: 42
     path: ${tempDir.path}
 ''');
 
-      // When loading the app config from disk.
-      final config = await AppConfig.load(configFile.path);
+        // When loading the app config from disk.
+        final config = await AppConfig.load(configFile.path);
 
-      // Then the project keeps the configured OpenProject provider.
-      expect(
-        config.projects['sample']!.provider,
-        IssueTrackerProvider.openproject,
-      );
-      expect(config.projects['sample']!.scm.provider, ScmProvider.github);
+        // Then the project infers the OpenProject provider.
+        expect(
+          config.projects['sample']!.provider,
+          IssueTrackerProvider.openproject,
+        );
+        expect(config.projects['sample']!.scm.provider, ScmProvider.github);
 
-      // And the project uses op/polling as its default issue event source.
-      expect(
-        config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.opPolling,
-      );
-    });
+        // And the project uses op/polling as its default issue event source.
+        expect(
+          config.projects['sample']!.issueAssistant.eventSource.type,
+          IssueTrackerEventSourceKind.opPolling,
+        );
+      },
+    );
 
     /// ```gherkin
     /// Scenario: Require an explicit SCM provider for OpenProject projects
-    ///   Given a config whose project uses the OpenProject issue tracker
+    ///   Given a config whose project uses op/polling as the event source
     ///   And the project omits scm.provider
     ///   When loading the app config from disk
     ///   Then loading fails with a clear SCM requirement error
     /// ```
     test('Require an explicit SCM provider for OpenProject projects', () async {
-      // Given a config whose project uses the OpenProject issue tracker.
+      // Given a config whose project uses op/polling as the event source.
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-openproject-missing-scm-',
       );
@@ -533,7 +543,8 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: openproject
+      eventSource:
+        type: op/polling
     repo: 42
     path: ${tempDir.path}
 ''');
@@ -551,7 +562,7 @@ projects:
             (error) => error.message,
             'message',
             contains(
-              'projects.sample.scm.provider is required for issueTracker.provider: openproject',
+              'projects.sample.scm.provider is required for issue tracking provider: openproject',
             ),
           ),
         ),
@@ -560,13 +571,13 @@ projects:
 
     /// ```gherkin
     /// Scenario: Accept an OpenProject project name reference
-    ///   Given a config whose project uses the OpenProject issue tracker
+    ///   Given a config whose project uses op/polling as the event source
     ///   And the project repo field is a human-readable project name
     ///   When loading the app config from disk
     ///   Then loading succeeds without requiring a numeric project id
     /// ```
     test('Accept an OpenProject project name reference', () async {
-      // Given a config whose project uses the OpenProject issue tracker.
+      // Given a config whose project uses op/polling as the event source.
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-openproject-project-name-',
       );
@@ -575,7 +586,8 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: openproject
+      eventSource:
+        type: op/polling
     scm:
       provider: github
     repo: Demo project
@@ -610,12 +622,10 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: github
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: gh/gosmee
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
@@ -624,7 +634,7 @@ projects:
       // Then the project keeps gh/gosmee as its event source.
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.ghGosmee,
+        IssueTrackerEventSourceKind.ghGosmee,
       );
 
       // And the GitHub provider remains valid for that project.
@@ -652,7 +662,8 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: gitea
+      eventSource:
+        type: tea/polling
     scm:
       provider: github
     repo: owner/sample
@@ -671,15 +682,17 @@ projects:
     );
 
     /// ```gherkin
-    /// Scenario: Reject gh/gosmee for non-GitHub providers
-    ///   Given a Gitea project config that opts into gh/gosmee
+    /// Scenario: Keep the legacy issue tracker provider as a fallback
+    ///   Given a config whose project still sets issueTracker.provider to gitea
+    ///   And the project omits issueAssistant.eventSource.type
     ///   When loading the app config from disk
-    ///   Then loading fails with a clear provider compatibility error
+    ///   Then the project keeps the configured Gitea provider
+    ///   And the polling event source is rewritten to tea/polling
     /// ```
-    test('Reject gh/gosmee for non-GitHub providers', () async {
-      // Given a Gitea project config that opts into gh/gosmee.
+    test('Keep the legacy issue tracker provider as a fallback', () async {
+      // Given a config whose project still sets issueTracker.provider to gitea.
       final tempDir = await Directory.systemTemp.createTemp(
-        'cws-gh-gosmee-gitea-',
+        'cws-legacy-provider-fallback-',
       );
       final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
       await configFile.writeAsString('''
@@ -689,22 +702,60 @@ projects:
       provider: gitea
     repo: owner/sample
     path: ${tempDir.path}
-    issueAssistant:
+''');
+
+      // And the project omits issueAssistant.eventSource.type.
+
+      // When loading the app config from disk.
+      final config = await AppConfig.load(configFile.path);
+
+      // Then the project keeps the configured Gitea provider.
+      expect(config.projects['sample']!.provider, IssueTrackerProvider.gitea);
+
+      // And the polling event source is rewritten to tea/polling.
+      expect(
+        config.projects['sample']!.issueAssistant.eventSource.type,
+        IssueTrackerEventSourceKind.teaPolling,
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Reject conflicting legacy tracker and event source settings
+    ///   Given a project config whose legacy tracker provider is gitea
+    ///   And the project opts into gh/gosmee
+    ///   When loading the app config from disk
+    ///   Then loading fails with a clear conflict error
+    /// ```
+    test('Reject conflicting legacy tracker and event source settings', () async {
+      // Given a project config whose legacy tracker provider is gitea.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-gh-gosmee-gitea-',
+      );
+      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+projects:
+  sample:
+    issueTracker:
+      provider: gitea
       eventSource:
         type: gh/gosmee
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
       final load = AppConfig.load(configFile.path);
 
-      // Then loading fails with a clear provider compatibility error.
+      // Then loading fails with a clear conflict error.
       await expectLater(
         load,
         throwsA(
           isA<FormatException>().having(
             (error) => error.message,
             'message',
-            contains('gh/gosmee requires issueTracker.provider: github'),
+            contains(
+              'gh/gosmee implies issue tracker provider github, but the legacy configured provider is gitea',
+            ),
           ),
         ),
       );
@@ -727,12 +778,10 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: github
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: gh/webhook-forward
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
@@ -741,7 +790,7 @@ projects:
       // Then the project keeps gh/webhook-forward as its event source.
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.ghWebhookForward,
+        IssueTrackerEventSourceKind.ghWebhookForward,
       );
 
       // And the GitHub provider remains valid for that project.
@@ -765,14 +814,12 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: github
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: gh/webhook-forward
         reconciliation: startup-only
         reconcileInterval: 5m
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
@@ -783,7 +830,7 @@ projects:
         (config.projects['sample']!.issueAssistant.eventSource
                 as ChannelIssueEventSourceConfig)
             .reconciliation,
-        IssueAssistantReconciliationKind.startupOnly,
+        IssueTrackerReconciliationKind.startupOnly,
       );
 
       // And the configured reconcile interval is parsed for channel recovery.
@@ -812,13 +859,11 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: github
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: gh/webhook-forward
         pollInterval: 45s
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
@@ -840,46 +885,51 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Reject gh/webhook-forward for non-GitHub providers
-    ///   Given a Gitea project config that opts into gh/webhook-forward
+    /// Scenario: Reject a legacy Gitea provider that conflicts with gh/webhook-forward
+    ///   Given a project config whose legacy tracker provider is gitea
+    ///   And the project opts into gh/webhook-forward
     ///   When loading the app config from disk
-    ///   Then loading fails with a clear provider compatibility error
+    ///   Then loading fails with a clear conflict error
     /// ```
-    test('Reject gh/webhook-forward for non-GitHub providers', () async {
-      // Given a Gitea project config that opts into gh/webhook-forward.
-      final tempDir = await Directory.systemTemp.createTemp(
-        'cws-webhook-forward-gitea-',
-      );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
+    test(
+      'Reject a legacy Gitea provider that conflicts with gh/webhook-forward',
+      () async {
+        // Given a project config whose legacy tracker provider is gitea.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'cws-webhook-forward-gitea-',
+        );
+        final configFile = File(
+          p.join(tempDir.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
 projects:
   sample:
     issueTracker:
       provider: gitea
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: gh/webhook-forward
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
-      // When loading the app config from disk.
-      final load = AppConfig.load(configFile.path);
+        // When loading the app config from disk.
+        final load = AppConfig.load(configFile.path);
 
-      // Then loading fails with a clear provider compatibility error.
-      await expectLater(
-        load,
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message',
-            contains(
-              'gh/webhook-forward requires issueTracker.provider: github',
+        // Then loading fails with a clear conflict error.
+        await expectLater(
+          load,
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains(
+                'gh/webhook-forward implies issue tracker provider github, but the legacy configured provider is gitea',
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     /// ```gherkin
     /// Scenario: Load tea/gosmee as the issue event source
@@ -896,12 +946,10 @@ projects:
 projects:
   sample:
     issueTracker:
-      provider: gitea
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: tea/gosmee
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
       // When loading the app config from disk.
@@ -910,7 +958,7 @@ projects:
       // Then the project keeps tea/gosmee as its event source.
       expect(
         config.projects['sample']!.issueAssistant.eventSource.type,
-        IssueAssistantEventSourceKind.teaGosmee,
+        IssueTrackerEventSourceKind.teaGosmee,
       );
 
       // And the Gitea provider remains valid for that project.
@@ -918,44 +966,51 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Reject tea/gosmee for non-Gitea providers
-    ///   Given a GitHub project config that opts into tea/gosmee
+    /// Scenario: Reject a legacy GitHub provider that conflicts with tea/gosmee
+    ///   Given a project config whose legacy tracker provider is github
+    ///   And the project opts into tea/gosmee
     ///   When loading the app config from disk
-    ///   Then loading fails with a clear provider compatibility error
+    ///   Then loading fails with a clear conflict error
     /// ```
-    test('Reject tea/gosmee for non-Gitea providers', () async {
-      // Given a GitHub project config that opts into tea/gosmee.
-      final tempDir = await Directory.systemTemp.createTemp(
-        'cws-gosmee-github-',
-      );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
+    test(
+      'Reject a legacy GitHub provider that conflicts with tea/gosmee',
+      () async {
+        // Given a project config whose legacy tracker provider is github.
+        final tempDir = await Directory.systemTemp.createTemp(
+          'cws-gosmee-github-',
+        );
+        final configFile = File(
+          p.join(tempDir.path, 'agent-orchestrator.yaml'),
+        );
+        await configFile.writeAsString('''
 projects:
   sample:
     issueTracker:
       provider: github
-    repo: owner/sample
-    path: ${tempDir.path}
-    issueAssistant:
       eventSource:
         type: tea/gosmee
+    repo: owner/sample
+    path: ${tempDir.path}
 ''');
 
-      // When loading the app config from disk.
-      final load = AppConfig.load(configFile.path);
+        // When loading the app config from disk.
+        final load = AppConfig.load(configFile.path);
 
-      // Then loading fails with a clear provider compatibility error.
-      await expectLater(
-        load,
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message',
-            contains('tea/gosmee requires issueTracker.provider: gitea'),
+        // Then loading fails with a clear conflict error.
+        await expectLater(
+          load,
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              contains(
+                'tea/gosmee implies issue tracker provider gitea, but the legacy configured provider is github',
+              ),
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     /// ```gherkin
     /// Scenario: Reject snake_case config keys
@@ -1097,16 +1152,6 @@ projects:
           .replaceFirst('    #     timeout: 10m', '        timeout: 10m')
           .replaceFirst('    # issueAssistant:', '    issueAssistant:')
           .replaceFirst('    #   enabled: true', '      enabled: true')
-          .replaceFirst('    #   eventSource:', '      eventSource:')
-          .replaceFirst('    #     type: gh/gosmee', '        type: gh/gosmee')
-          .replaceFirst(
-            '    #     reconciliation: startup-only',
-            '        reconciliation: startup-only',
-          )
-          .replaceFirst(
-            '    #     reconcileInterval: 30s',
-            '        reconcileInterval: 30s',
-          )
           .replaceFirst(
             '    #   mentionTriggers: ["@helper"]',
             '      mentionTriggers: ["@helper"]',
@@ -1138,10 +1183,8 @@ projects:
         '@helper',
       ]);
       expect(
-        (config.projects['sample']!.issueAssistant.eventSource
-                as ChannelIssueEventSourceConfig)
-            .reconciliation,
-        IssueAssistantReconciliationKind.startupOnly,
+        config.projects['sample']!.issueAssistant.eventSource,
+        isA<PollingIssueEventSourceConfig>(),
       );
     });
   });

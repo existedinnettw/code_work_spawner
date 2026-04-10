@@ -25,16 +25,16 @@ void main() {
       final webhookForward = _RecordingIssueEventSource();
       final routed = RoutedIssueEventSource(
         sources: {
-          IssueAssistantEventSourceKind.ghPolling: polling,
-          IssueAssistantEventSourceKind.teaPolling: polling,
-          IssueAssistantEventSourceKind.ghWebhookForward: webhookForward,
+          IssueTrackerEventSourceKind.ghPolling: polling,
+          IssueTrackerEventSourceKind.teaPolling: polling,
+          IssueTrackerEventSourceKind.ghWebhookForward: webhookForward,
         },
       );
 
       // And a project that uses gh/webhook-forward with startup-only reconciliation.
       final project = _project(
-        eventSource: IssueAssistantEventSourceKind.ghWebhookForward,
-        reconciliation: IssueAssistantReconciliationKind.startupOnly,
+        eventSource: IssueTrackerEventSourceKind.ghWebhookForward,
+        reconciliation: IssueTrackerReconciliationKind.startupOnly,
       );
 
       // When the routed event source starts in long-running mode.
@@ -64,16 +64,16 @@ void main() {
         final webhookForward = _RecordingIssueEventSource();
         final routed = RoutedIssueEventSource(
           sources: {
-            IssueAssistantEventSourceKind.ghPolling: polling,
-            IssueAssistantEventSourceKind.teaPolling: polling,
-            IssueAssistantEventSourceKind.ghWebhookForward: webhookForward,
+            IssueTrackerEventSourceKind.ghPolling: polling,
+            IssueTrackerEventSourceKind.teaPolling: polling,
+            IssueTrackerEventSourceKind.ghWebhookForward: webhookForward,
           },
         );
 
         // And a project that uses gh/webhook-forward with continuous reconciliation.
         final project = _project(
-          eventSource: IssueAssistantEventSourceKind.ghWebhookForward,
-          reconciliation: IssueAssistantReconciliationKind.continuous,
+          eventSource: IssueTrackerEventSourceKind.ghWebhookForward,
+          reconciliation: IssueTrackerReconciliationKind.continuous,
         );
 
         // When the routed event source starts in long-running mode.
@@ -115,8 +115,8 @@ class _RecordingIssueEventSource implements IssueEventSource {
 }
 
 ProjectConfig _project({
-  required IssueAssistantEventSourceKind eventSource,
-  required IssueAssistantReconciliationKind reconciliation,
+  required IssueTrackerEventSourceKind eventSource,
+  required IssueTrackerReconciliationKind reconciliation,
 }) {
   return ProjectConfig(
     key: 'sample',

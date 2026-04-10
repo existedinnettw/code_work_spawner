@@ -39,7 +39,7 @@ abstract class IssueEventSource {
 class RoutedIssueEventSource implements IssueEventSource {
   RoutedIssueEventSource({required this.sources});
 
-  final Map<IssueAssistantEventSourceKind, IssueEventSource> sources;
+  final Map<IssueTrackerEventSourceKind, IssueEventSource> sources;
 
   @override
   Future<void> run({
@@ -50,17 +50,15 @@ class RoutedIssueEventSource implements IssueEventSource {
         .where(_shouldRunStartupReconciliation)
         .toList(growable: false);
     if (startupReconcileProjects.isNotEmpty) {
-      await sources[IssueAssistantEventSourceKind.ghPolling]!.runOnce(
+      await sources[IssueTrackerEventSourceKind.ghPolling]!.runOnce(
         projects: startupReconcileProjects,
         onBatch: onBatch,
       );
     }
 
-    final projectsBySource =
-        <IssueAssistantEventSourceKind, List<ProjectConfig>>{
-          for (final eventSource in sources.keys)
-            eventSource: <ProjectConfig>[],
-        };
+    final projectsBySource = <IssueTrackerEventSourceKind, List<ProjectConfig>>{
+      for (final eventSource in sources.keys) eventSource: <ProjectConfig>[],
+    };
     for (final project in projects) {
       for (final projectSource in _registeredSourcesFor(project)) {
         final sourceProjects = projectsBySource[projectSource];
@@ -90,7 +88,7 @@ class RoutedIssueEventSource implements IssueEventSource {
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) {
-    return sources[IssueAssistantEventSourceKind.ghPolling]!.runOnce(
+    return sources[IssueTrackerEventSourceKind.ghPolling]!.runOnce(
       projects: projects,
       onBatch: onBatch,
     );
@@ -103,33 +101,33 @@ class RoutedIssueEventSource implements IssueEventSource {
     }
   }
 
-  Iterable<IssueAssistantEventSourceKind> _registeredSourcesFor(
+  Iterable<IssueTrackerEventSourceKind> _registeredSourcesFor(
     ProjectConfig project,
   ) sync* {
     switch (project.issueAssistant.eventSource.type) {
-      case IssueAssistantEventSourceKind.ghPolling:
-        yield IssueAssistantEventSourceKind.ghPolling;
-      case IssueAssistantEventSourceKind.glabPolling:
-        yield IssueAssistantEventSourceKind.glabPolling;
-      case IssueAssistantEventSourceKind.teaPolling:
-        yield IssueAssistantEventSourceKind.teaPolling;
-      case IssueAssistantEventSourceKind.opPolling:
-        yield IssueAssistantEventSourceKind.opPolling;
-      case IssueAssistantEventSourceKind.ghGosmee:
+      case IssueTrackerEventSourceKind.ghPolling:
+        yield IssueTrackerEventSourceKind.ghPolling;
+      case IssueTrackerEventSourceKind.glabPolling:
+        yield IssueTrackerEventSourceKind.glabPolling;
+      case IssueTrackerEventSourceKind.teaPolling:
+        yield IssueTrackerEventSourceKind.teaPolling;
+      case IssueTrackerEventSourceKind.opPolling:
+        yield IssueTrackerEventSourceKind.opPolling;
+      case IssueTrackerEventSourceKind.ghGosmee:
         if (_shouldRunContinuousReconciliation(project)) {
-          yield IssueAssistantEventSourceKind.ghPolling;
+          yield IssueTrackerEventSourceKind.ghPolling;
         }
-        yield IssueAssistantEventSourceKind.ghGosmee;
-      case IssueAssistantEventSourceKind.ghWebhookForward:
+        yield IssueTrackerEventSourceKind.ghGosmee;
+      case IssueTrackerEventSourceKind.ghWebhookForward:
         if (_shouldRunContinuousReconciliation(project)) {
-          yield IssueAssistantEventSourceKind.ghPolling;
+          yield IssueTrackerEventSourceKind.ghPolling;
         }
-        yield IssueAssistantEventSourceKind.ghWebhookForward;
-      case IssueAssistantEventSourceKind.teaGosmee:
+        yield IssueTrackerEventSourceKind.ghWebhookForward;
+      case IssueTrackerEventSourceKind.teaGosmee:
         if (_shouldRunContinuousReconciliation(project)) {
-          yield IssueAssistantEventSourceKind.teaPolling;
+          yield IssueTrackerEventSourceKind.teaPolling;
         }
-        yield IssueAssistantEventSourceKind.teaGosmee;
+        yield IssueTrackerEventSourceKind.teaGosmee;
     }
   }
 
@@ -141,7 +139,7 @@ class RoutedIssueEventSource implements IssueEventSource {
       project.issueAssistant.eventSource is ChannelIssueEventSourceConfig &&
       (project.issueAssistant.eventSource as ChannelIssueEventSourceConfig)
               .reconciliation ==
-          IssueAssistantReconciliationKind.continuous;
+          IssueTrackerReconciliationKind.continuous;
 }
 
 class PollingIssueEventSource implements IssueEventSource {
