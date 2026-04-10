@@ -247,6 +247,7 @@ projects:
       // And GitHub issue data containing a comment with an explicit assistant mention.
       final ghScript = File(p.join(sandbox.path, 'gh'));
       final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final reactionBody = File(p.join(sandbox.path, 'reaction-body.txt'));
       final issueData = [
         {
           'number': 43,
@@ -274,6 +275,7 @@ projects:
         issueListResponse: issueData,
         commentResponses: {43: commentsData},
         ghLog: ghLog,
+        reactionBodyFile: reactionBody,
       );
 
       // And a responder that explicitly returns no_reply.
@@ -327,6 +329,17 @@ projects:
             .length,
         1,
       );
+      expect(
+        logLines
+            .where(
+              (line) => line.contains(
+                'repos/owner/sample/issues/comments/430/reactions',
+              ),
+            )
+            .length,
+        1,
+      );
+      expect(await reactionBody.readAsString(), 'eyes');
       expect(thread.lastCommentId, isNull);
     });
 
