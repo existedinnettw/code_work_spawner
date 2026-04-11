@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "lib/**"
+      - "bin/**"
   pull_request:
+    paths:
+      - "lib/**"
+      - "bin/**"
 
 jobs:
   dart:

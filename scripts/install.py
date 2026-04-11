@@ -22,6 +22,17 @@ REPO = "existedinnettw/code_work_spawner"
 BINARY_NAME = "code_work_spawner"
 
 
+def github_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "code_work_spawner-install-script",
+    }
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Install code_work_spawner from GitHub Releases."
@@ -105,18 +116,19 @@ def download_release_metadata(repo: str, version: str) -> dict:
     try:
         response = httpx.get(
             url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "code_work_spawner-install-script",
-            },
+            headers=github_headers(),
             timeout=30.0,
             follow_redirects=True,
         )
         response.raise_for_status()
         return response.json()
     except httpx.HTTPStatusError as exc:
+        hint = ""
+        if exc.response.status_code == 404:
+            hint = " If this release exists, set GH_TOKEN (or GITHUB_TOKEN) and retry."
         raise RuntimeError(
-            f"Failed to fetch release metadata ({exc.response.status_code}): {exc.response.text}"
+            "Failed to fetch release metadata "
+            f"({exc.response.status_code}): {exc.response.text}{hint}"
         ) from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Failed to fetch release metadata: {exc}") from exc
@@ -147,7 +159,7 @@ def download_asset(asset: dict, destination: Path) -> None:
         with httpx.stream(
             "GET",
             download_url,
-            headers={"User-Agent": "code_work_spawner-install-script"},
+            headers=github_headers(),
             timeout=60.0,
             follow_redirects=True,
         ) as response:

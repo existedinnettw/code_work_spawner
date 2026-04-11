@@ -82,7 +82,9 @@ dart run bin/code_work_spawner.dart \
 Install the latest matching release binary from GitHub Releases:
 
 ```bash
+# export GH_TOKEN="$TOKEN" # If got 404, `GITHUB_TOKEN` also work
 uv run https://github.com/existedinnettw/code_work_spawner/scripts/install.py
+uv run https://$GH_TOKEN@raw.githubusercontent.com/existedinnettw/code_work_spawner/main/scripts/install.py --help
 ```
 
 Install a specific version:
