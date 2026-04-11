@@ -77,6 +77,20 @@ dart run bin/code_work_spawner.dart \
   --tea-command /usr/bin/tea
 ```
 
+## Install Binary
+
+Install the latest matching release binary from GitHub Releases:
+
+```bash
+uv run https://github.com/existedinnettw/code_work_spawner/scripts/install.py
+```
+
+Install a specific version:
+
+```bash
+uv run https://github.com/existedinnettw/code_work_spawner/scripts/install.py --version v1.0.0
+```
+
 ## Testing
 
 ```bash
