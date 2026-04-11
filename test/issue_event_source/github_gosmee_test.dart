@@ -123,6 +123,13 @@ projects:
         responderRunner: fakeResponderRunner(),
         commandExecutor: fakeExternalCommandExecutor(),
       );
+      final records = <AppLogRecord>[];
+      void captureLog(AppLogRecord record) {
+        records.add(record);
+      }
+
+      AppLogger.addListener(captureLog);
+      addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
       final runFuture = app.run();
@@ -165,6 +172,47 @@ projects:
         gosmeeLogLines.any(
           (line) =>
               line.contains('client https://gosmee.example.test/github-sample'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'route project=sample provider=github event_source=gh/gosmee',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.message.contains('route source=gh/gosmee projects=sample'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'github/gosmee project=sample setup_start',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains('github/gosmee channel_command_result'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains(
+                'github webhook create repo=owner/sample',
+              ),
         ),
         isTrue,
       );

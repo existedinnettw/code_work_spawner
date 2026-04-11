@@ -92,12 +92,17 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
     );
     for (final project in config.projects.values) {
       final repoDirectory = Directory(project.path);
+      final eventSource = project.issueAssistant.eventSource;
       logger.info(
         'project=${project.key} '
         'repo=${project.repo} '
         'path=${project.path} '
         'exists=${await repoDirectory.exists()} '
-        'enabled=${project.issueAssistant.enabled}',
+        'enabled=${project.issueAssistant.enabled} '
+        'tracker_provider=${project.provider.name} '
+        'scm_provider=${project.scm.provider.name} '
+        'event_source=${_eventSourceKindValue(eventSource.type)}'
+        '${_cliEventSourceSettings(eventSource)}',
       );
     }
     final app = await IssueAssistantApp.open(
@@ -119,6 +124,39 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       await app.close();
     }
   }
+}
+
+String _cliEventSourceSettings(IssueEventSourceConfig eventSource) {
+  return switch (eventSource) {
+    PollingIssueEventSourceConfig(:final pollInterval) =>
+      ' poll_interval=$pollInterval',
+    ChannelIssueEventSourceConfig(
+      :final reconciliation,
+      :final reconcileInterval,
+    ) =>
+      ' reconciliation=${_reconciliationKindValue(reconciliation)} '
+          'reconcile_interval=$reconcileInterval',
+  };
+}
+
+String _eventSourceKindValue(IssueTrackerEventSourceKind value) {
+  return switch (value) {
+    IssueTrackerEventSourceKind.ghPolling => 'gh/polling',
+    IssueTrackerEventSourceKind.glabPolling => 'glab/polling',
+    IssueTrackerEventSourceKind.teaPolling => 'tea/polling',
+    IssueTrackerEventSourceKind.opPolling => 'op/polling',
+    IssueTrackerEventSourceKind.ghGosmee => 'gh/gosmee',
+    IssueTrackerEventSourceKind.glabGosmee => 'glab/gosmee',
+    IssueTrackerEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
+    IssueTrackerEventSourceKind.teaGosmee => 'tea/gosmee',
+  };
+}
+
+String _reconciliationKindValue(IssueTrackerReconciliationKind value) {
+  return switch (value) {
+    IssueTrackerReconciliationKind.startupOnly => 'startup-only',
+    IssueTrackerReconciliationKind.continuous => 'continuous',
+  };
 }
 
 class _InitConfigCommand extends Command<void> {

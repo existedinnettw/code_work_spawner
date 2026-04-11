@@ -38,19 +38,27 @@ abstract class IssueEventSource {
 }
 
 class RoutedIssueEventSource implements IssueEventSource {
-  RoutedIssueEventSource({required this.sources});
+  RoutedIssueEventSource({required this.sources, required AppLogger logger})
+    : _logger = logger;
 
   final Map<IssueTrackerEventSourceKind, IssueEventSource> sources;
+  final AppLogger _logger;
 
   @override
   Future<void> run({
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) async {
+    for (final project in projects) {
+      _log(_routeLogMessage(project));
+    }
     final startupReconcileProjects = projects
         .where(_shouldRunStartupReconciliation)
         .toList(growable: false);
     if (startupReconcileProjects.isNotEmpty) {
+      _log(
+        'route startup_reconciliation projects=${startupReconcileProjects.map((project) => project.key).join(",")}',
+      );
       await sources[IssueTrackerEventSourceKind.ghPolling]!.runOnce(
         projects: startupReconcileProjects,
         onBatch: onBatch,
@@ -72,15 +80,21 @@ class RoutedIssueEventSource implements IssueEventSource {
       }
     }
 
+    final routedEntries = projectsBySource.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .toList(growable: false);
+    for (final entry in routedEntries) {
+      _log(
+        'route source=${_eventSourceKindValue(entry.key)} '
+        'projects=${entry.value.map((project) => project.key).join(",")}',
+      );
+    }
+
     await Future.wait(
-      projectsBySource.entries
-          .where((entry) => entry.value.isNotEmpty)
-          .map(
-            (entry) => sources[entry.key]!.run(
-              projects: entry.value,
-              onBatch: onBatch,
-            ),
-          ),
+      routedEntries.map(
+        (entry) =>
+            sources[entry.key]!.run(projects: entry.value, onBatch: onBatch),
+      ),
     );
   }
 
@@ -89,6 +103,9 @@ class RoutedIssueEventSource implements IssueEventSource {
     required List<ProjectConfig> projects,
     required IssueEventBatchHandler onBatch,
   }) {
+    for (final project in projects) {
+      _log('run_once ${_routeLogMessage(project)}');
+    }
     return sources[IssueTrackerEventSourceKind.ghPolling]!.runOnce(
       projects: projects,
       onBatch: onBatch,
@@ -146,6 +163,37 @@ class RoutedIssueEventSource implements IssueEventSource {
       (project.issueAssistant.eventSource as ChannelIssueEventSourceConfig)
               .reconciliation ==
           IssueTrackerReconciliationKind.continuous;
+
+  String _routeLogMessage(ProjectConfig project) {
+    final eventSource = project.issueAssistant.eventSource;
+    final routedSources = _registeredSourcesFor(
+      project,
+    ).map(_eventSourceKindValue).join(',');
+    return 'route project=${project.key} '
+        'provider=${project.provider.name} '
+        'event_source=${_eventSourceKindValue(eventSource.type)} '
+        'startup_reconciliation=${_shouldRunStartupReconciliation(project)} '
+        'continuous_reconciliation=${_shouldRunContinuousReconciliation(project)} '
+        '${_eventSourceSettings(eventSource)} '
+        'routed_sources=$routedSources';
+  }
+
+  String _eventSourceSettings(IssueEventSourceConfig eventSource) {
+    return switch (eventSource) {
+      PollingIssueEventSourceConfig(:final pollInterval) =>
+        'poll_interval=$pollInterval',
+      ChannelIssueEventSourceConfig(
+        :final reconciliation,
+        :final reconcileInterval,
+      ) =>
+        'reconciliation=${_reconciliationKindValue(reconciliation)} '
+            'reconcile_interval=$reconcileInterval',
+    };
+  }
+
+  void _log(String message) {
+    _logger.info(message);
+  }
 }
 
 class PollingIssueEventSource implements IssueEventSource {
@@ -492,4 +540,24 @@ class _ProjectPollState {
   final ProjectConfig project;
   DateTime nextDueAt;
   bool isRunning = false;
+}
+
+String _eventSourceKindValue(IssueTrackerEventSourceKind value) {
+  return switch (value) {
+    IssueTrackerEventSourceKind.ghPolling => 'gh/polling',
+    IssueTrackerEventSourceKind.glabPolling => 'glab/polling',
+    IssueTrackerEventSourceKind.teaPolling => 'tea/polling',
+    IssueTrackerEventSourceKind.opPolling => 'op/polling',
+    IssueTrackerEventSourceKind.ghGosmee => 'gh/gosmee',
+    IssueTrackerEventSourceKind.glabGosmee => 'glab/gosmee',
+    IssueTrackerEventSourceKind.ghWebhookForward => 'gh/webhook-forward',
+    IssueTrackerEventSourceKind.teaGosmee => 'tea/gosmee',
+  };
+}
+
+String _reconciliationKindValue(IssueTrackerReconciliationKind value) {
+  return switch (value) {
+    IssueTrackerReconciliationKind.startupOnly => 'startup-only',
+    IssueTrackerReconciliationKind.continuous => 'continuous',
+  };
 }

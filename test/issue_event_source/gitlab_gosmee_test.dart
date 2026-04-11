@@ -137,6 +137,13 @@ projects:
         responderRunner: fakeResponderRunner(),
         commandExecutor: fakeExternalCommandExecutor(),
       );
+      final records = <AppLogRecord>[];
+      void captureLog(AppLogRecord record) {
+        records.add(record);
+      }
+
+      AppLogger.addListener(captureLog);
+      addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
       final runFuture = app.run();
@@ -183,6 +190,48 @@ projects:
         gosmeeLogLines.any(
           (line) =>
               line.contains('client https://gosmee.example.test/gitlab-sample'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'route project=sample provider=gitlab event_source=glab/gosmee',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'route source=glab/gosmee projects=sample',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'gitlab/gosmee project=sample setup_start',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains('gitlab/gosmee channel_command_result'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains(
+                'gitlab webhook create repo=group/subgroup/sample',
+              ),
         ),
         isTrue,
       );

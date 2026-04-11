@@ -60,6 +60,10 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
     _runCompleter = completer;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
+    _log(
+      'github/gosmee starting projects=${githubProjects.length} '
+      'keys=${githubProjects.map((project) => project.key).join(",")}',
+    );
     final repoToProject = {
       for (final project in githubProjects) project.repo: project,
     };
@@ -88,64 +92,83 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
       'github/gosmee listening local_url=$localUrl '
       'projects=${githubProjects.map((project) => project.key).join(",")}',
     );
-    for (final project in githubProjects) {
-      _log(
-        'github/gosmee project=${project.key} create_channel '
-        'command="$gosmeeCommand --output json client --new-url $localUrl"',
-      );
-      final publicUrl = await _createGosmeeChannelUrl(localUrl);
-      _log(
-        'github/gosmee project=${project.key} channel_ready '
-        'public_url=$publicUrl local_url=$localUrl',
-      );
-      final webhookId = await issueTrackerClient.createGitHubIssueWebhook(
-        repo: project.requiredRepoSlug,
-        url: publicUrl,
-      );
-      _webhookIdsByProject[project.key] = webhookId;
-      _log(
-        'github/gosmee project=${project.key} webhook_registered '
-        'webhook_id=$webhookId repo=${project.repo}',
-      );
-      _log(
-        'github/gosmee project=${project.key} start_client '
-        'command="$gosmeeCommand client $publicUrl $localUrl"',
-      );
-      final process = await commandExecutor.start(gosmeeCommand, [
-        'client',
-        publicUrl,
-        localUrl,
-      ]);
-      _gosmeeProcesses[project.key] = process;
-      _pipeProcessLogs(
-        project: project,
-        stream: process.stdout,
-        level: 'stdout',
-      );
-      _pipeProcessLogs(
-        project: project,
-        stream: process.stderr,
-        level: 'stderr',
-      );
-      unawaited(
-        process.exitCode.then((exitCode) {
-          _gosmeeProcesses.remove(project.key);
-          _log(
-            'github/gosmee process project=${project.key} exit_code=$exitCode',
-          );
-          if (!_isClosing && !completer.isCompleted) {
-            completer.completeError(
-              StateError(
-                'gosmee client exited for project=${project.key} '
-                'with code $exitCode.',
-              ),
-            );
-          }
-        }),
-      );
-    }
-
     try {
+      for (final project in githubProjects) {
+        var setupStep = 'create_channel';
+        try {
+          _log(
+            'github/gosmee project=${project.key} setup_start '
+            'repo=${project.repo} local_url=$localUrl',
+          );
+          _log(
+            'github/gosmee project=${project.key} create_channel '
+            'command="$gosmeeCommand --output json client --new-url $localUrl"',
+          );
+          final publicUrl = await _createGosmeeChannelUrl(localUrl);
+          _log(
+            'github/gosmee project=${project.key} channel_ready '
+            'public_url=$publicUrl local_url=$localUrl',
+          );
+          setupStep = 'register_webhook';
+          final webhookId = await issueTrackerClient.createGitHubIssueWebhook(
+            repo: project.requiredRepoSlug,
+            url: publicUrl,
+          );
+          _webhookIdsByProject[project.key] = webhookId;
+          _log(
+            'github/gosmee project=${project.key} webhook_registered '
+            'webhook_id=$webhookId repo=${project.repo}',
+          );
+          setupStep = 'start_client';
+          _log(
+            'github/gosmee project=${project.key} start_client '
+            'command="$gosmeeCommand client $publicUrl $localUrl"',
+          );
+          final process = await commandExecutor.start(gosmeeCommand, [
+            'client',
+            publicUrl,
+            localUrl,
+          ]);
+          _gosmeeProcesses[project.key] = process;
+          _pipeProcessLogs(
+            project: project,
+            stream: process.stdout,
+            level: 'stdout',
+          );
+          _pipeProcessLogs(
+            project: project,
+            stream: process.stderr,
+            level: 'stderr',
+          );
+          unawaited(
+            process.exitCode.then((exitCode) {
+              _gosmeeProcesses.remove(project.key);
+              _log(
+                'github/gosmee process project=${project.key} exit_code=$exitCode',
+              );
+              if (!_isClosing && !completer.isCompleted) {
+                completer.completeError(
+                  StateError(
+                    'gosmee client exited for project=${project.key} '
+                    'with code $exitCode.',
+                  ),
+                );
+              }
+            }),
+          );
+          _log(
+            'github/gosmee project=${project.key} setup_complete '
+            'repo=${project.repo}',
+          );
+        } catch (error, stackTrace) {
+          _logError(
+            'github/gosmee project=${project.key} setup_failed '
+            'step=$setupStep error=$error',
+          );
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+      }
+
       await completer.future;
     } finally {
       await close();
@@ -223,6 +246,10 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
     required Map<String, ProjectConfig> repoToProject,
     required IssueEventBatchHandler onBatch,
   }) async {
+    _logDebug(
+      'github/gosmee webhook request method=${request.method} '
+      'path=${request.uri.path} event=${request.headers.value("X-GitHub-Event") ?? "(missing)"}',
+    );
     if (request.method != 'POST') {
       _log(
         'github/gosmee webhook ignored method=${request.method} '
@@ -295,6 +322,11 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
       '--new-url',
       localUrl,
     ]);
+    _logDebug(
+      'github/gosmee channel_command_result local_url=$localUrl '
+      'exit_code=${result.exitCode} stdout=${_summarizeText(result.stdout.toString())} '
+      'stderr=${_summarizeText(result.stderr.toString())}',
+    );
     if (result.exitCode != 0) {
       throw ProcessException(
         gosmeeCommand,
@@ -411,7 +443,17 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
 
   void _log(String message) => _logger.info(message);
 
+  void _logDebug(String message) => _logger.debug(message);
+
   void _logError(String message) => _logger.error(message);
+
+  String _summarizeText(String value) {
+    final singleLine = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (singleLine.length <= 240) {
+      return singleLine.isEmpty ? '(empty)' : singleLine;
+    }
+    return '${singleLine.substring(0, 240)}...';
+  }
 }
 
 class _QueuedGitHubIssue {

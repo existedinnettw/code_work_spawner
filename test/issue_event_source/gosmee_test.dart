@@ -132,6 +132,13 @@ CWS_GITEA_TOKEN=test-token
         responderRunner: fakeResponderRunner(),
         commandExecutor: fakeExternalCommandExecutor(),
       );
+      final records = <AppLogRecord>[];
+      void captureLog(AppLogRecord record) {
+        records.add(record);
+      }
+
+      AppLogger.addListener(captureLog);
+      addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
       final runFuture = app.run();
@@ -163,6 +170,46 @@ CWS_GITEA_TOKEN=test-token
         'https://gosmee.example.test/sample',
       );
       expect(giteaServer.deletedWebhookIds, contains(81));
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'route project=sample provider=gitea event_source=tea/gosmee',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'route source=tea/gosmee projects=sample',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) => record.message.contains(
+            'gitea/gosmee project=sample setup_start',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains('gitea/gosmee channel_command_result'),
+        ),
+        isTrue,
+      );
+      expect(
+        records.any(
+          (record) =>
+              record.level == AppLogLevel.debug &&
+              record.message.contains('gitea config source=env'),
+        ),
+        isTrue,
+      );
     });
 
     /// ```gherkin

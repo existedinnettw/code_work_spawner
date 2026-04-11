@@ -517,6 +517,7 @@ logins:
             ..write('[]');
           await request.response.close();
         });
+        final serverHost = server.address.host;
         _configureGiteaTestEnvironment(server);
         final logMessages = <String>[];
         void listener(AppLogRecord record) {
@@ -555,6 +556,12 @@ logins:
         }
 
         // And the tracker logger records the timed out request.
+        expect(
+          logMessages,
+          contains(
+            allOf(contains('gitea config source=env'), contains(serverHost)),
+          ),
+        );
         expect(
           logMessages,
           contains(

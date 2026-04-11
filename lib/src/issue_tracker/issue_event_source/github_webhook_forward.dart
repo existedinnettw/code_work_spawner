@@ -54,6 +54,10 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
     _runCompleter = completer;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     _server = server;
+    _log(
+      'github/webhook-forward starting projects=${githubProjects.length} '
+      'keys=${githubProjects.map((project) => project.key).join(",")}',
+    );
     final repoToProject = {
       for (final project in githubProjects) project.repo: project,
     };
@@ -79,50 +83,66 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
       'github/webhook-forward listening local_url=$url '
       'projects=${githubProjects.map((project) => project.key).join(",")}',
     );
-    for (final project in githubProjects) {
-      _log(
-        'github/webhook-forward project=${project.key} start_forwarder '
-        'command="${issueTrackerClient.ghCommand} webhook forward --events=issues,issue_comment --repo=${project.repo} --url=$url"',
-      );
-      final process = await commandExecutor
-          .start(issueTrackerClient.ghCommand, [
-            'webhook',
-            'forward',
-            '--events=issues,issue_comment',
-            '--repo=${project.repo}',
-            '--url=$url',
-          ]);
-      _forwardProcesses[project.key] = process;
-      _pipeProcessLogs(
-        project: project,
-        stream: process.stdout,
-        level: 'stdout',
-      );
-      _pipeProcessLogs(
-        project: project,
-        stream: process.stderr,
-        level: 'stderr',
-      );
-      unawaited(
-        process.exitCode.then((exitCode) {
-          _forwardProcesses.remove(project.key);
-          _log(
-            'github/webhook-forward process project=${project.key} '
-            'exit_code=$exitCode',
-          );
-          if (!_isClosing && !completer.isCompleted) {
-            completer.completeError(
-              StateError(
-                'gh webhook forward exited for project=${project.key} '
-                'with code $exitCode.',
-              ),
-            );
-          }
-        }),
-      );
-    }
-
     try {
+      for (final project in githubProjects) {
+        try {
+          _log(
+            'github/webhook-forward project=${project.key} setup_start '
+            'repo=${project.repo} local_url=$url',
+          );
+          _log(
+            'github/webhook-forward project=${project.key} start_forwarder '
+            'command="${issueTrackerClient.ghCommand} webhook forward --events=issues,issue_comment --repo=${project.repo} --url=$url"',
+          );
+          final process = await commandExecutor
+              .start(issueTrackerClient.ghCommand, [
+                'webhook',
+                'forward',
+                '--events=issues,issue_comment',
+                '--repo=${project.repo}',
+                '--url=$url',
+              ]);
+          _forwardProcesses[project.key] = process;
+          _pipeProcessLogs(
+            project: project,
+            stream: process.stdout,
+            level: 'stdout',
+          );
+          _pipeProcessLogs(
+            project: project,
+            stream: process.stderr,
+            level: 'stderr',
+          );
+          unawaited(
+            process.exitCode.then((exitCode) {
+              _forwardProcesses.remove(project.key);
+              _log(
+                'github/webhook-forward process project=${project.key} '
+                'exit_code=$exitCode',
+              );
+              if (!_isClosing && !completer.isCompleted) {
+                completer.completeError(
+                  StateError(
+                    'gh webhook forward exited for project=${project.key} '
+                    'with code $exitCode.',
+                  ),
+                );
+              }
+            }),
+          );
+          _log(
+            'github/webhook-forward project=${project.key} setup_complete '
+            'repo=${project.repo}',
+          );
+        } catch (error, stackTrace) {
+          _logError(
+            'github/webhook-forward project=${project.key} setup_failed '
+            'step=start_forwarder error=$error',
+          );
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+      }
+
       await completer.future;
     } finally {
       await close();
@@ -179,6 +199,10 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
     required Map<String, ProjectConfig> repoToProject,
     required IssueEventBatchHandler onBatch,
   }) async {
+    _logDebug(
+      'github/webhook-forward webhook request method=${request.method} '
+      'path=${request.uri.path} event=${request.headers.value("X-GitHub-Event") ?? "(missing)"}',
+    );
     if (request.method != 'POST') {
       _log(
         'github/webhook-forward webhook ignored method=${request.method} '
@@ -319,6 +343,10 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
 
   void _log(String message) {
     _logger.info(message);
+  }
+
+  void _logDebug(String message) {
+    _logger.debug(message);
   }
 
   void _logError(String message) {

@@ -69,6 +69,7 @@ class IssueAssistantApp {
       database: database,
       issueTrackerClient: issueTrackerClient,
       issueEventSource: RoutedIssueEventSource(
+        logger: _logger,
         sources: {
           IssueTrackerEventSourceKind.ghPolling: pollingIssueEventSource,
           IssueTrackerEventSourceKind.glabPolling: pollingIssueEventSource,

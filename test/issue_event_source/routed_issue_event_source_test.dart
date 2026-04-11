@@ -24,6 +24,7 @@ void main() {
       final polling = _RecordingIssueEventSource();
       final webhookForward = _RecordingIssueEventSource();
       final routed = RoutedIssueEventSource(
+        logger: AppLogger('test.routed_issue_event_source'),
         sources: {
           IssueTrackerEventSourceKind.ghPolling: polling,
           IssueTrackerEventSourceKind.teaPolling: polling,
@@ -63,6 +64,7 @@ void main() {
         final polling = _RecordingIssueEventSource();
         final webhookForward = _RecordingIssueEventSource();
         final routed = RoutedIssueEventSource(
+          logger: AppLogger('test.routed_issue_event_source'),
           sources: {
             IssueTrackerEventSourceKind.ghPolling: polling,
             IssueTrackerEventSourceKind.teaPolling: polling,

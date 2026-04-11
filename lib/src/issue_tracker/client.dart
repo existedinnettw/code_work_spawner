@@ -253,6 +253,9 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required String url,
   }) async {
+    _logger.debug(
+      'gitea webhook create repo=${repo.fullName} url=$url events=issues,issue_comment',
+    );
     final json = await _runGiteaJson(
       method: 'POST',
       path: _buildApiPath(repo, ['hooks']),
@@ -277,6 +280,9 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required String url,
   }) async {
+    _logger.debug(
+      'github webhook create repo=${repo.fullName} url=$url events=issues,issue_comment',
+    );
     final json = await _runGhJson([
       'api',
       '-X',
@@ -307,6 +313,9 @@ class IssueTrackerClient {
     required String trackerProject,
     required String url,
   }) async {
+    _logger.debug(
+      'gitlab webhook create repo=$trackerProject url=$url events=issues,note',
+    );
     final json = await _runGlabJson([
       'api',
       '-X',
@@ -333,6 +342,9 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required int webhookId,
   }) async {
+    _logger.debug(
+      'github webhook delete repo=${repo.fullName} webhook_id=$webhookId',
+    );
     await _runGhJson([
       'api',
       '-X',
@@ -345,6 +357,9 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required int webhookId,
   }) async {
+    _logger.debug(
+      'gitea webhook delete repo=${repo.fullName} webhook_id=$webhookId',
+    );
     await _runGiteaJson(
       method: 'DELETE',
       path: _buildApiPath(repo, ['hooks', '$webhookId']),
@@ -355,6 +370,9 @@ class IssueTrackerClient {
     required String trackerProject,
     required int webhookId,
   }) async {
+    _logger.debug(
+      'gitlab webhook delete repo=$trackerProject webhook_id=$webhookId',
+    );
     await _runGlabJson([
       'api',
       '-X',
@@ -991,6 +1009,9 @@ class IssueTrackerClient {
         environment['CWS_GITEA_INSECURE']?.trim() ??
         environment['GITEA_INSECURE']?.trim();
     if (host != null && host.isNotEmpty && token != null && token.isNotEmpty) {
+      _logger.debug(
+        'gitea config source=env host=$host insecure=${_parseBooleanFlag(insecureValue)}',
+      );
       return _GiteaConfig(
         host: Uri.parse(host),
         token: token,
@@ -1003,6 +1024,10 @@ class IssueTrackerClient {
         environment['GITEA_LOGIN']?.trim() ??
         environment['TEA_LOGIN']?.trim();
     final configPath = _teaConfigPath(environment);
+    _logger.debug(
+      'gitea config source=tea config_path=$configPath '
+      'requested_login=${loginName ?? "(default)"}',
+    );
     final file = File(configPath);
     if (!await file.exists()) {
       throw const FileSystemException(
@@ -1035,6 +1060,11 @@ class IssueTrackerClient {
       );
     }
 
+    _logger.debug(
+      'gitea config source=tea host=$loginHost '
+      'login=${selectedLogin["name"]?.toString().trim() ?? "(unnamed)"} '
+      'insecure=${_parseBooleanFlag(selectedLogin["insecure"]?.toString())}',
+    );
     return _GiteaConfig(
       host: Uri.parse(loginHost),
       token: loginToken,
