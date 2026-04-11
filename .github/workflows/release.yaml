@@ -61,7 +61,12 @@ jobs:
         shell: bash
         run: |
           mkdir -p release-assets
-          asset_name="code_work_spawner-${{ github.ref_name }}-${{ matrix.target_os }}-${{ matrix.target_arch }}${{ matrix.ext }}"
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            version_tag="${GITHUB_REF_NAME}"
+          else
+            version_tag="${GITHUB_REF_NAME//\//-}"
+          fi
+          asset_name="code_work_spawner-${version_tag}-${{ matrix.target_os }}-${{ matrix.target_arch }}${{ matrix.ext }}"
           cp "dist/code_work_spawner${{ matrix.ext }}" "release-assets/${asset_name}"
 
       - name: Upload build artifact
