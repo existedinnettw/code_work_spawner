@@ -36,7 +36,6 @@ void main() {
 
       // And it does not force the command to run in a shell.
       expect(resolved.runInShell, isFalse);
-      expect(resolved.usesBashShim, isFalse);
     });
 
     /// ```gherkin
@@ -62,47 +61,40 @@ void main() {
 
       // And it marks the command to run in a shell.
       expect(resolved.runInShell, isTrue);
-      expect(resolved.usesBashShim, isFalse);
     });
 
     /// ```gherkin
-    /// Scenario: Wrap local extensionless scripts through WSL bash on Windows
-    ///   Given a local extensionless script file on Windows
+    /// Scenario: Leave local Bash scripts unresolved on Windows
+    ///   Given a local Bash script file on Windows
     ///   When the process launcher resolves the command
-    ///   Then it swaps the executable to wsl.exe
-    ///   And it forwards the script path as a bash path
+    ///   Then it leaves the script path unchanged
+    ///   And it does not add a WSL wrapper
     /// ```
-    test(
-      'Wrap local extensionless scripts through WSL bash on Windows',
-      () async {
-        // Given a local extensionless script file on Windows.
-        final sandbox = await Directory.systemTemp.createTemp(
-          'cws-process-launcher-',
+    test('Leave local Bash scripts unresolved on Windows', () async {
+      // Given a local Bash script file on Windows.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-process-launcher-',
+      );
+      final script = File(p.join(sandbox.path, 'fake-tea.sh'));
+      await script.writeAsString('#!/usr/bin/env bash\nprintf \'[]\\n\'\n');
+
+      try {
+        // When the process launcher resolves the command.
+        final resolved = resolveExternalCommandForCurrentPlatform(
+          script.path,
+          const <String>['api'],
+          isWindows: true,
         );
-        final script = File(p.join(sandbox.path, 'fake-tea'));
-        await script.writeAsString('#!/usr/bin/env bash\nprintf \'[]\\n\'\n');
 
-        try {
-          // When the process launcher resolves the command.
-          final resolved = resolveExternalCommandForCurrentPlatform(
-            script.path,
-            const <String>['api'],
-            isWindows: true,
-          );
+        // Then it leaves the script path unchanged.
+        expect(resolved.executable, script.path);
 
-          // Then it swaps the executable to wsl.exe.
-          expect(resolved.executable, 'wsl.exe');
-          expect(resolved.usesBashShim, isTrue);
-
-          // And it forwards the script path as a bash path.
-          expect(resolved.runInShell, isFalse);
-          expect(resolved.arguments.first, '--exec');
-          expect(resolved.arguments[1], 'bash');
-          expect(resolved.arguments[2], startsWith('/mnt/'));
-        } finally {
-          await sandbox.delete(recursive: true);
-        }
-      },
-    );
+        // And it does not add a WSL wrapper.
+        expect(resolved.runInShell, isFalse);
+        expect(resolved.arguments, const <String>['api']);
+      } finally {
+        await sandbox.delete(recursive: true);
+      }
+    });
   });
 }

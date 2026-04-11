@@ -20,8 +20,11 @@ class IssueTrackerClient {
     this.opCommand = 'op',
     Duration? commandTimeout,
     AppLogger? logger,
+    ExternalCommandExecutor? commandExecutor,
   }) : commandTimeout = commandTimeout ?? const Duration(seconds: 15),
-       _logger = logger ?? AppLogger('code_work_spawner.issue_tracker');
+       _logger = logger ?? AppLogger('code_work_spawner.issue_tracker'),
+       _commandExecutor =
+           commandExecutor ?? const DefaultExternalCommandExecutor();
 
   final String ghCommand;
   final String glabCommand;
@@ -29,6 +32,7 @@ class IssueTrackerClient {
   final String opCommand;
   final Duration commandTimeout;
   final AppLogger _logger;
+  final ExternalCommandExecutor _commandExecutor;
   final Map<IssueTrackerProvider, Future<String?>> _authenticatedLoginFutures =
       <IssueTrackerProvider, Future<String?>>{};
   final Map<String, Future<_OpenProjectProjectRef>> _openProjectProjectFutures =
@@ -792,7 +796,7 @@ class IssueTrackerClient {
     );
     late final ProcessResult result;
     try {
-      result = await runExternalCommand(
+      result = await _commandExecutor.run(
         command,
         arguments,
         timeout: commandTimeout,

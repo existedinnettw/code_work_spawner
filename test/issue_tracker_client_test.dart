@@ -146,7 +146,10 @@ void main() {
         postedBodyFile: postedBodyFile,
         viewerLogin: 'glab-user',
       );
-      final client = IssueTrackerClient(glabCommand: glabScript.path);
+      final client = IssueTrackerClient(
+        glabCommand: glabScript.path,
+        commandExecutor: fakeExternalCommandExecutor(),
+      );
 
       // When the tracker client fetches updates, loads the thread, resolves the login, and posts a comment.
       final issues = await client.fetchUpdatedIssuesForRepos(

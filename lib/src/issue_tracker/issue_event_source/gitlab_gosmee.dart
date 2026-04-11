@@ -13,6 +13,7 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
   GitLabGosmeeIssueEventSource({
     required this.issueTrackerClient,
     required this.gosmeeCommand,
+    required this.commandExecutor,
     required AppLogger logger,
   }) : _logger = logger;
 
@@ -20,10 +21,11 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
 
   final IssueTrackerClient issueTrackerClient;
   final String gosmeeCommand;
+  final ExternalCommandExecutor commandExecutor;
   final AppLogger _logger;
   final Map<String, _QueuedGitLabIssue> _queuedIssues = {};
   final Set<Future<void>> _activeDispatches = <Future<void>>{};
-  final Map<String, Process> _gosmeeProcesses = {};
+  final Map<String, StartedExternalCommand> _gosmeeProcesses = {};
   final Map<String, int> _webhookIdsByProject = {};
   final Map<String, String> _trackerProjectsByProject = {};
 
@@ -107,7 +109,7 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
         'gitlab/gosmee project=${project.key} start_client '
         'command="$gosmeeCommand client $publicUrl $localUrl"',
       );
-      final process = await startExternalCommand(gosmeeCommand, [
+      final process = await commandExecutor.start(gosmeeCommand, [
         'client',
         publicUrl,
         localUrl,
@@ -324,7 +326,7 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
   }
 
   Future<String> _createGosmeeChannelUrl(String localUrl) async {
-    final result = await runExternalCommand(gosmeeCommand, [
+    final result = await commandExecutor.run(gosmeeCommand, [
       '--output',
       'json',
       'client',

@@ -129,6 +129,8 @@ CWS_GITEA_TOKEN=test-token
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         gosmeeCommand: gosmeeScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and receives the forwarded webhook.
@@ -185,25 +187,11 @@ CWS_GITEA_TOKEN=test-token
       // And a gosmee script that starts forwarding without delivering an event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
       final gosmeeLog = File(p.join(sandbox.path, 'gosmee-log.jsonl'));
-      await gosmeeScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-    printf '%s\n' "\$*" >> "${bashScriptPath(gosmeeLog.path)}"
-
-if [[ "\$1" == "--output" && "\$2" == "json" && "\$3" == "client" && "\$4" == "--new-url" ]]; then
-  printf '%s\n' 'https://gosmee.example.test/reconcile'
-  exit 0
-fi
-
-if [[ "\$1" == "client" ]]; then
-  while true; do
-    sleep 60
-  done
-fi
-
-echo "unexpected gosmee args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(gosmeeScript);
+      registerFakeGosmeeCommand(
+        command: gosmeeScript.path,
+        publicUrl: 'https://gosmee.example.test/reconcile',
+        gosmeeLog: gosmeeLog,
+      );
 
       final issue = {
         'index': 18,
@@ -290,6 +278,8 @@ CWS_GITEA_TOKEN=test-token
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         gosmeeCommand: gosmeeScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and enough time passes for reconciliation polling.

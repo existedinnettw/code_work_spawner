@@ -13,3 +13,6 @@ agent-orchestrator.yaml
 !/skills/dart-gherkin-tests
 *.g.dart
 **/*.exe
+/CWS*.yaml
+/CWS*.yml
+dart_test.yaml

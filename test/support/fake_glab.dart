@@ -15,7 +15,7 @@ Future<void> writeFakeGlabScript({
   bool failViewerLookup = false,
   Map<String, int>? webhookIdsByRepo,
 }) async {
-  final normalizedPostCommentIssueNumbersByRepo =
+  final postIssueNumbers =
       postCommentIssueNumbersByRepo ??
       <String, Set<int>>{
         for (final entry in issueListResponsesByRepo.entries)
@@ -24,123 +24,110 @@ Future<void> writeFakeGlabScript({
               .whereType<int>()
               .toSet(),
       };
-
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (glabLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(glabLog.path)}"',
-    );
-  }
-
-  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
-  if (failViewerLookup) {
-    buffer
-      ..writeln(r'''  echo "viewer lookup failed" >&2''')
-      ..writeln('  exit 1')
-      ..writeln('fi');
-  } else {
-    buffer
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode({'username': viewerLogin ?? 'glab-user'}))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  for (final entry in issueListResponsesByRepo.entries) {
-    final repo = Uri.encodeComponent(entry.key);
-    buffer
-      ..writeln(
-        r'''if [[ "$1" == "api" && "$4" == "projects/'''
-        '$repo'
-        r'''/issues?state=opened"* ]]; then''',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode(entry.value))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  for (final repoEntry in commentResponsesByRepo.entries) {
-    final repo = Uri.encodeComponent(repoEntry.key);
-    for (final entry in repoEntry.value.entries) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"projects/$repo/issues/${entry.key}/notes?per_page=100" ]]; then',
-        )
-        ..writeln("  cat <<'JSON'")
-        ..writeln(jsonEncode(entry.value))
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
+  fakeCommandHandlers[glabScript.path] = (arguments, {timeout}) async {
+    if (glabLog != null) {
+      await glabLog.writeAsString(
+        '${arguments.join(' ')}\n',
+        mode: FileMode.append,
+      );
     }
-  }
 
-  for (final repoEntry in normalizedPostCommentIssueNumbersByRepo.entries) {
-    final repo = Uri.encodeComponent(repoEntry.key);
-    for (final issueNumber in repoEntry.value) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"projects/$repo/issues/$issueNumber/notes" ]]; then',
-        )
-        ..writeln(r'''  for arg in "$@"; do''')
-        ..writeln(r'''    :''');
-      if (postedBodyFile != null) {
-        buffer
-          ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
-          ..writeln(
-            r'''      printf '%s' "${arg#body=}" > '''
-            '"${bashScriptPath(postedBodyFile.path)}"',
-          )
-          ..writeln(r'''    fi''');
+    ProcessResult result(
+      Object? stdout, {
+      int exitCode = 0,
+      String stderr = '',
+    }) {
+      return ProcessResult(
+        0,
+        exitCode,
+        stdout is String ? stdout : jsonEncode(stdout),
+        stderr,
+      );
+    }
+
+    if (_matches(arguments, 0, 'api') && _matches(arguments, 1, 'user')) {
+      if (failViewerLookup) {
+        return result('', exitCode: 1, stderr: 'viewer lookup failed\n');
       }
-      buffer
-        ..writeln(r'''  done''')
-        ..writeln("  cat <<'JSON'")
-        ..writeln(
-          jsonEncode({
+      return result({'username': viewerLogin ?? 'glab-user'});
+    }
+
+    for (final entry in issueListResponsesByRepo.entries) {
+      final repo = Uri.encodeComponent(entry.key);
+      if (_matches(arguments, 0, 'api') &&
+          arguments.length > 3 &&
+          arguments[3].startsWith('projects/$repo/issues?state=opened')) {
+        return result(entry.value);
+      }
+    }
+
+    for (final repoEntry in commentResponsesByRepo.entries) {
+      final repo = Uri.encodeComponent(repoEntry.key);
+      for (final entry in repoEntry.value.entries) {
+        if (_matches(arguments, 0, 'api') &&
+            _matches(
+              arguments,
+              3,
+              'projects/$repo/issues/${entry.key}/notes?per_page=100',
+            )) {
+          return result(entry.value);
+        }
+      }
+    }
+
+    for (final repoEntry in postIssueNumbers.entries) {
+      final repo = Uri.encodeComponent(repoEntry.key);
+      for (final issueNumber in repoEntry.value) {
+        if (_matches(arguments, 0, 'api') &&
+            _matches(
+              arguments,
+              3,
+              'projects/$repo/issues/$issueNumber/notes',
+            )) {
+          final body = _valueArg(arguments, 'body=');
+          if (postedBodyFile != null && body != null) {
+            await postedBodyFile.writeAsString(body);
+          }
+          return result({
             'id': 901,
             'body': 'posted',
             'noteable_url':
                 'https://gitlab.example.test/group/subgroup/sample/issues/$issueNumber',
-          }),
-        )
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
+          });
+        }
+      }
+    }
+
+    for (final entry in (webhookIdsByRepo ?? const <String, int>{}).entries) {
+      final repo = Uri.encodeComponent(entry.key);
+      if (_matches(arguments, 0, 'api') &&
+          _matches(arguments, 2, 'POST') &&
+          _matches(arguments, 3, 'projects/$repo/hooks')) {
+        return result({'id': entry.value});
+      }
+      if (_matches(arguments, 0, 'api') &&
+          _matches(arguments, 2, 'DELETE') &&
+          _matches(arguments, 3, 'projects/$repo/hooks/${entry.value}')) {
+        return result(null);
+      }
+    }
+
+    return result(
+      '',
+      exitCode: 1,
+      stderr: 'unexpected glab args: ${arguments.join(' ')}\n',
+    );
+  };
+}
+
+bool _matches(List<String> arguments, int index, String value) =>
+    arguments.length > index && arguments[index] == value;
+
+String? _valueArg(List<String> arguments, String prefix) {
+  for (final argument in arguments) {
+    if (argument.startsWith(prefix)) {
+      return argument.substring(prefix.length);
     }
   }
-
-  for (final entry in (webhookIdsByRepo ?? const <String, int>{}).entries) {
-    final repo = Uri.encodeComponent(entry.key);
-    buffer
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == "projects/$repo/hooks" && "\$3" == "POST" ]]; then',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode({'id': entry.value}))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi')
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == "projects/$repo/hooks/${entry.value}" && "\$3" == "DELETE" ]]; then',
-      )
-      ..writeln("  printf '%s\\n' 'null'")
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  buffer
-    ..writeln(r'''echo "unexpected glab args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await glabScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(glabScript);
+  return null;
 }

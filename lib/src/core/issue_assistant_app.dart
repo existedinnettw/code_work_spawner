@@ -7,6 +7,7 @@ import '../config/app_logger.dart';
 import 'cli_responder.dart';
 import '../config/config.dart';
 import 'database.dart';
+import 'process_launcher.dart';
 import '../issue_tracker/issue_event_source/base.dart';
 import '../issue_tracker/issue_event_source/gitea_gosmee.dart';
 import '../issue_tracker/issue_event_source/gitlab_gosmee.dart';
@@ -46,12 +47,17 @@ class IssueAssistantApp {
     String glabCommand = 'glab',
     String gosmeeCommand = 'gosmee',
     String teaCommand = 'tea',
+    CliResponderRunner? responderRunner,
+    ExternalCommandExecutor? commandExecutor,
   }) async {
     final database = AppDatabase.open(databasePath);
+    final externalCommandExecutor =
+        commandExecutor ?? const DefaultExternalCommandExecutor();
     final issueTrackerClient = IssueTrackerClient(
       ghCommand: ghCommand,
       glabCommand: glabCommand,
       teaCommand: teaCommand,
+      commandExecutor: externalCommandExecutor,
     );
     final pollingIssueEventSource = PollingIssueEventSource(
       database: database,
@@ -71,26 +77,30 @@ class IssueAssistantApp {
           IssueTrackerEventSourceKind.ghGosmee: GitHubGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
+            commandExecutor: externalCommandExecutor,
             logger: _logger,
           ),
           IssueTrackerEventSourceKind.glabGosmee: GitLabGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
+            commandExecutor: externalCommandExecutor,
             logger: _logger,
           ),
           IssueTrackerEventSourceKind.ghWebhookForward:
               GitHubWebhookForwardIssueEventSource(
                 issueTrackerClient: issueTrackerClient,
+                commandExecutor: externalCommandExecutor,
                 logger: _logger,
               ),
           IssueTrackerEventSourceKind.teaGosmee: GiteaGosmeeIssueEventSource(
             issueTrackerClient: issueTrackerClient,
             gosmeeCommand: gosmeeCommand,
+            commandExecutor: externalCommandExecutor,
             logger: _logger,
           ),
         },
       ),
-      responderRunner: CliResponderRunner(),
+      responderRunner: responderRunner ?? CliResponderRunner(),
       workspaceManager: WorkspaceManager(worktreeRoot: config.worktreeDir),
       notifierRegistryFactory: (project) => NotifierRegistry.fromConfigs(
         project.issueAssistant.notifications,

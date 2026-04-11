@@ -12,16 +12,18 @@ import 'base.dart';
 class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
   GitHubWebhookForwardIssueEventSource({
     required this.issueTrackerClient,
+    required this.commandExecutor,
     required AppLogger logger,
   }) : _logger = logger;
 
   static const Duration _webhookCoalescingWindow = Duration(milliseconds: 500);
 
   final IssueTrackerClient issueTrackerClient;
+  final ExternalCommandExecutor commandExecutor;
   final AppLogger _logger;
   final Map<String, _QueuedWebhookIssue> _queuedIssues = {};
   final Set<Future<void>> _activeDispatches = <Future<void>>{};
-  final Map<String, Process> _forwardProcesses = {};
+  final Map<String, StartedExternalCommand> _forwardProcesses = {};
 
   HttpServer? _server;
   Timer? _flushTimer;
@@ -82,13 +84,14 @@ class GitHubWebhookForwardIssueEventSource implements IssueEventSource {
         'github/webhook-forward project=${project.key} start_forwarder '
         'command="${issueTrackerClient.ghCommand} webhook forward --events=issues,issue_comment --repo=${project.repo} --url=$url"',
       );
-      final process = await startExternalCommand(issueTrackerClient.ghCommand, [
-        'webhook',
-        'forward',
-        '--events=issues,issue_comment',
-        '--repo=${project.repo}',
-        '--url=$url',
-      ]);
+      final process = await commandExecutor
+          .start(issueTrackerClient.ghCommand, [
+            'webhook',
+            'forward',
+            '--events=issues,issue_comment',
+            '--repo=${project.repo}',
+            '--url=$url',
+          ]);
       _forwardProcesses[project.key] = process;
       _pipeProcessLogs(
         project: project,

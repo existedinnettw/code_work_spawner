@@ -68,7 +68,6 @@ Future<void> main(List<String> arguments) async {
       'executable': resolved.executable,
       'arguments': resolved.arguments,
       'run_in_shell': resolved.runInShell,
-      'uses_bash_shim': resolved.usesBashShim,
     },
     'results': <Object?>[],
   };
