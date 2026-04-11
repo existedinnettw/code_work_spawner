@@ -24,6 +24,7 @@ void registerFakeGosmeeCommand({
   Map<String, Object?>? payload,
   File? gosmeeLog,
   String webhookHeader = 'X-Gitea-Event',
+  bool exitOnSigterm = true,
 }) {
   fakeCommandHandlers[command] = (arguments, {timeout}) async {
     if (gosmeeLog != null) {
@@ -44,7 +45,7 @@ void registerFakeGosmeeCommand({
     if (gosmeeLog != null) {
       await _appendLine(gosmeeLog, '${arguments.join(' ')}\n');
     }
-    final process = FakeStartedExternalCommand();
+    final process = FakeStartedExternalCommand(exitOnSigterm: exitOnSigterm);
     if (arguments.length >= 3 &&
         arguments[0] == 'client' &&
         arguments[1] == publicUrl) {

@@ -8,6 +8,7 @@ import '../../core/process_launcher.dart';
 import '../client.dart';
 import '../models.dart';
 import 'base.dart';
+import 'gosmee_shared.dart';
 
 class GitLabGosmeeIssueEventSource implements IssueEventSource {
   GitLabGosmeeIssueEventSource({
@@ -204,12 +205,11 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
 
     final processes = _gosmeeProcesses.values.toList(growable: false);
     _gosmeeProcesses.clear();
-    for (final process in processes) {
-      process.kill();
-    }
-    for (final process in processes) {
-      await process.exitCode.catchError((_) => 0);
-    }
+    await GosmeeShared.terminateProcesses(
+      processes: processes,
+      sourceLabel: 'gitlab/gosmee',
+      logError: _logError,
+    );
 
     final webhookIds = Map<String, int>.from(_webhookIdsByProject);
     _webhookIdsByProject.clear();
@@ -353,60 +353,14 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
   }
 
   Future<String> _createGosmeeChannelUrl(String localUrl) async {
-    final result = await commandExecutor.run(gosmeeCommand, [
-      '--output',
-      'json',
-      'client',
-      '--new-url',
-      localUrl,
-    ]);
-    _logDebug(
-      'gitlab/gosmee channel_command_result local_url=$localUrl '
-      'exit_code=${result.exitCode} stdout=${_summarizeText(result.stdout.toString())} '
-      'stderr=${_summarizeText(result.stderr.toString())}',
+    return GosmeeShared.createChannelUrl(
+      commandExecutor: commandExecutor,
+      gosmeeCommand: gosmeeCommand,
+      localUrl: localUrl,
+      sourceLabel: 'gitlab/gosmee',
+      log: _log,
+      logDebug: _logDebug,
     );
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        gosmeeCommand,
-        ['--output', 'json', 'client', '--new-url', localUrl],
-        '${result.stdout}\n${result.stderr}',
-        result.exitCode,
-      );
-    }
-
-    final stdoutText = result.stdout.toString().trim();
-    if (stdoutText.isEmpty) {
-      throw const FormatException('gosmee did not print a public URL.');
-    }
-    _log(
-      'gitlab/gosmee channel_raw_output local_url=$localUrl stdout=$stdoutText',
-    );
-
-    try {
-      final decoded = jsonDecode(stdoutText);
-      if (decoded is Map<String, dynamic>) {
-        final url = decoded['url']?.toString().trim();
-        if (url == null || url.isEmpty) {
-          throw const FormatException(
-            'gosmee JSON output did not contain a valid public URL.',
-          );
-        }
-        return url;
-      }
-      if (decoded is String) {
-        final url = decoded.trim();
-        if (url.isEmpty) {
-          throw const FormatException('gosmee did not print a public URL.');
-        }
-        return url;
-      }
-    } on FormatException {
-      if (Uri.tryParse(stdoutText)?.hasScheme ?? false) {
-        return stdoutText;
-      }
-    }
-
-    throw const FormatException('gosmee did not print a valid public URL.');
   }
 
   void _scheduleFlush() {
@@ -469,14 +423,13 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
     required Stream<List<int>> stream,
     required String level,
   }) {
-    utf8.decoder.bind(stream).transform(const LineSplitter()).listen((line) {
-      final message = 'gitlab/gosmee project=${project.key} $level=$line';
-      if (level == 'stderr') {
-        _logger.error(message);
-      } else {
-        _logger.info(message);
-      }
-    });
+    GosmeeShared.pipeProcessLogs(
+      logger: _logger,
+      sourceLabel: 'gitlab/gosmee',
+      projectKey: project.key,
+      stream: stream,
+      level: level,
+    );
   }
 
   void _log(String message) => _logger.info(message);
@@ -484,14 +437,6 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
   void _logDebug(String message) => _logger.debug(message);
 
   void _logError(String message) => _logger.error(message);
-
-  String _summarizeText(String value) {
-    final singleLine = value.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (singleLine.length <= 240) {
-      return singleLine.isEmpty ? '(empty)' : singleLine;
-    }
-    return '${singleLine.substring(0, 240)}...';
-  }
 }
 
 class _QueuedGitLabIssue {

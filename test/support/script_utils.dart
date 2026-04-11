@@ -61,6 +61,15 @@ ExternalCommandExecutor fakeExternalCommandExecutor() {
 }
 
 class FakeStartedExternalCommand implements StartedExternalCommand {
+  FakeStartedExternalCommand({
+    this.exitOnSigterm = true,
+    this.exitOnSigkill = true,
+    this.sigkillExitCode = 137,
+  });
+
+  final bool exitOnSigterm;
+  final bool exitOnSigkill;
+  final int sigkillExitCode;
   final StreamController<List<int>> _stdoutController = StreamController();
   final StreamController<List<int>> _stderrController = StreamController();
   final Completer<int> _exitCodeCompleter = Completer<int>();
@@ -96,7 +105,16 @@ class FakeStartedExternalCommand implements StartedExternalCommand {
 
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
-    complete();
+    if (signal == ProcessSignal.sigkill) {
+      if (exitOnSigkill) {
+        complete(sigkillExitCode);
+      }
+      return true;
+    }
+    if (signal == ProcessSignal.sigterm && exitOnSigterm) {
+      complete();
+      return true;
+    }
     return true;
   }
 }

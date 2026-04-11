@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../test_support.dart';
+import 'test_helpers.dart';
 
 void registerIssueAssistantAppRunGitLabGosmeeTests() {
   /// ```gherkin
@@ -29,11 +30,11 @@ void registerIssueAssistantAppRunGitLabGosmeeTests() {
     /// ```
     test('Reply to a mention received through glab/gosmee', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-glab-gosmee-run-',
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-glab-gosmee-run-',
       );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gosmee script that forwards one GitLab note webhook event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -109,26 +110,14 @@ void registerIssueAssistantAppRunGitLabGosmeeTests() {
       });
 
       // And an orchestrator-style config that uses glab/gosmee.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: gitlab
-      eventSource:
-        pollInterval: 5m
-        type: glab/gosmee
-    repo: group/subgroup/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'gitlab',
+        repo: 'group/subgroup/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['pollInterval: 5m', 'type: glab/gosmee'],
+      );
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
@@ -146,15 +135,7 @@ projects:
       addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(app: app, isReady: postedBody.exists);
 
       // Then it reads issue comments and posts exactly one reply for that issue.
       expect(await postedBody.exists(), isTrue);
@@ -236,6 +217,134 @@ projects:
         isTrue,
       );
     });
+
+    /// ```gherkin
+    /// Scenario: Delete webhook even when gosmee ignores SIGTERM during shutdown
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And a gosmee command that forwards one GitLab webhook event but ignores SIGTERM
+    ///   And a glab script that can manage webhooks and post issue comments
+    ///   And a responder that emits a planning reply
+    ///   And an orchestrator-style config that uses glab/gosmee
+    ///   When the long-running app starts and then closes
+    ///   Then the app still deletes the GitLab webhook for the project
+    /// ```
+    test(
+      'Delete webhook even when gosmee ignores SIGTERM during shutdown',
+      () async {
+        // Given a temporary project checkout that can be used as the local repo path.
+        final sandboxRepo = await createSandboxRepo(
+          prefix: 'cws-glab-gosmee-shutdown-',
+        );
+        final sandbox = sandboxRepo.sandbox;
+        final repoDir = sandboxRepo.repoDir;
+
+        // And a gosmee command that forwards one GitLab webhook event but ignores SIGTERM.
+        final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
+        final issue = <String, Object?>{
+          'iid': 21,
+          'title': 'Shutdown should still unregister webhook',
+          'description': 'Please react before shutdown.',
+          'state': 'opened',
+          'web_url':
+              'https://gitlab.example.test/group/subgroup/sample/-/issues/21',
+          'updated_at': '2026-04-08T07:00:00Z',
+          'author': {'username': 'reporter'},
+          'labels': const <String>[],
+        };
+        final comments = <Map<String, Object?>>[
+          {
+            'id': 151,
+            'body': '@helper verify webhook cleanup on shutdown',
+            'created_at': '2026-04-08T07:00:00Z',
+            'updated_at': '2026-04-08T07:00:00Z',
+            'author': {'username': 'reporter'},
+            'noteable_url':
+                'https://gitlab.example.test/group/subgroup/sample/-/issues/21',
+          },
+        ];
+        registerFakeGosmeeCommand(
+          command: gosmeeScript.path,
+          publicUrl: 'https://gosmee.example.test/gitlab-shutdown',
+          payload: {
+            'object_kind': 'note',
+            'project': {'path_with_namespace': 'group/subgroup/sample'},
+            'issue': issue,
+            'object_attributes': {
+              'action': 'create',
+              'note': comments.last['body'],
+              'noteable_type': 'Issue',
+              'url': comments.last['noteable_url'],
+            },
+            'user': {'username': 'reporter'},
+          },
+          webhookHeader: 'X-Gitlab-Event',
+          exitOnSigterm: false,
+        );
+
+        // And a glab script that can manage webhooks and post issue comments.
+        final glabScript = File(p.join(sandbox.path, 'glab'));
+        final glabLog = File(p.join(sandbox.path, 'glab-log.jsonl'));
+        final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
+        await writeFakeGlabScript(
+          glabScript: glabScript,
+          issueListResponsesByRepo: {
+            'group/subgroup/sample': const <Map<String, Object?>>[],
+          },
+          commentResponsesByRepo: {
+            'group/subgroup/sample': {21: comments},
+          },
+          postCommentIssueNumbersByRepo: {
+            'group/subgroup/sample': {21},
+          },
+          glabLog: glabLog,
+          postedBodyFile: postedBody,
+          viewerLogin: 'glab-user',
+          webhookIdsByRepo: {'group/subgroup/sample': 81},
+        );
+
+        // And a responder that emits a planning reply.
+        final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+        await writeResponderScript(responderScript, {
+          'decision': 'reply',
+          'mode': 'planning',
+          'markdown':
+              'Plan:\n- ensure webhook cleanup when shutdown races forwarding',
+          'summary': 'posted shutdown cleanup advice',
+        });
+
+        // And an orchestrator-style config that uses glab/gosmee.
+        final configFile = await writeSingleProjectIssueAssistantConfig(
+          sandbox: sandbox,
+          responderPath: responderScript.path,
+          provider: 'gitlab',
+          repo: 'group/subgroup/sample',
+          repoPath: repoDir.path,
+          eventSourceLines: const ['pollInterval: 5m', 'type: glab/gosmee'],
+        );
+        final app = await IssueAssistantApp.open(
+          config: await AppConfig.load(configFile.path),
+          databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          glabCommand: glabScript.path,
+          gosmeeCommand: gosmeeScript.path,
+          responderRunner: fakeResponderRunner(),
+          commandExecutor: fakeExternalCommandExecutor(),
+        );
+
+        // When the long-running app starts and then closes.
+        await runAppUntil(app: app, isReady: postedBody.exists);
+
+        // Then the app still deletes the GitLab webhook for the project.
+        final glabLogLines = await glabLog.readAsLines();
+        expect(
+          glabLogLines.any(
+            (line) => line.contains(
+              'api -X DELETE projects/group%2Fsubgroup%2Fsample/hooks/81',
+            ),
+          ),
+          isTrue,
+        );
+      },
+    );
   });
 }
 
