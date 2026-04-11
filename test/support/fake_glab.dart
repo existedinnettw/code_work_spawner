@@ -11,6 +11,7 @@ Future<void> writeFakeGlabScript({
   File? glabLog,
   Map<String, Set<int>>? postCommentIssueNumbersByRepo,
   File? postedBodyFile,
+  File? reactionBodyFile,
   String? viewerLogin,
   bool failViewerLookup = false,
   Map<String, int>? webhookIdsByRepo,
@@ -71,6 +72,29 @@ Future<void> writeFakeGlabScript({
               'projects/$repo/issues/${entry.key}/notes?per_page=100',
             )) {
           return result(entry.value);
+        }
+      }
+    }
+
+    for (final repoEntry in commentResponsesByRepo.entries) {
+      final repo = Uri.encodeComponent(repoEntry.key);
+      for (final issueEntry in repoEntry.value.entries) {
+        for (final comment in issueEntry.value) {
+          final commentId = comment['id'];
+          if (commentId is int &&
+              _matches(arguments, 0, 'api') &&
+              _matches(arguments, 2, 'POST') &&
+              _matches(
+                arguments,
+                3,
+                'projects/$repo/issues/${issueEntry.key}/notes/$commentId/award_emoji',
+              )) {
+            final reaction = _valueArg(arguments, 'name=');
+            if (reactionBodyFile != null && reaction != null) {
+              await reactionBodyFile.writeAsString(reaction);
+            }
+            return result({'name': reaction ?? 'eyes'});
+          }
         }
       }
     }

@@ -24,6 +24,7 @@ class FakeGiteaApiServer {
   final String token;
   final List<String> requestPaths = <String>[];
   final List<String> postedBodies = <String>[];
+  final List<String> reactionBodies = <String>[];
   final List<Map<String, dynamic>> createdWebhooks = <Map<String, dynamic>>[];
   final List<int> deletedWebhookIds = <int>[];
   final Map<String, int> _issueListRequestCounts = <String, int>{};
@@ -148,6 +149,21 @@ class FakeGiteaApiServer {
           await response.close();
           return;
         }
+      }
+
+      if (segments.length == 9 &&
+          segments[5] == 'issues' &&
+          segments[6] == 'comments' &&
+          segments[8] == 'reactions' &&
+          request.method == 'POST') {
+        final body = await utf8.decodeStream(request);
+        reactionBodies.add(body);
+        response.statusCode = HttpStatus.created;
+        response.write(
+          jsonEncode(<String, Object?>{'id': 990, 'content': 'eyes'}),
+        );
+        await response.close();
+        return;
       }
     }
 

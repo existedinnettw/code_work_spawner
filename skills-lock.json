@@ -944,7 +944,7 @@
     "worktrunk": {
       "source": "max-sixty/worktrunk",
       "sourceType": "github",
-      "computedHash": "e95e53e4ef26baddf9efb6b6c4e08276384edba9d7e9269d61a11f2c6871c6d5"
+      "computedHash": "252c02ad30d62a966f6eff331be0b440c058bb346462b8ef0dab276c9ea2abbc"
     },
     "write-coding-standards-from-file": {
       "source": "github/awesome-copilot",

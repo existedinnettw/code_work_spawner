@@ -204,6 +204,7 @@ class IssueTrackerClient {
   Future<bool> createNoReplyReaction({
     required IssueTrackerProvider provider,
     required String trackerProject,
+    required int issueNumber,
     required int commentId,
   }) async {
     switch (provider) {
@@ -224,11 +225,99 @@ class IssueTrackerClient {
           'content=eyes',
         ]);
         return true;
-      case IssueTrackerProvider.gitlab:
       case IssueTrackerProvider.gitea:
+        try {
+          await _runGiteaJson(
+            method: 'POST',
+            path: _buildApiPath(parseRepositorySlug(trackerProject), [
+              'issues',
+              'comments',
+              '$commentId',
+              'reactions',
+            ]),
+            body: <String, Object?>{'content': 'eyes'},
+          );
+          return true;
+        } on FormatException catch (error) {
+          final message = error.message.toLowerCase();
+          if (_isGiteaExistingReactionError(message)) {
+            return true;
+          }
+          if (_isGiteaReactionUnsupported(message)) {
+            return false;
+          }
+          rethrow;
+        }
+      case IssueTrackerProvider.gitlab:
+        try {
+          await _runGlabJson([
+            'api',
+            '-X',
+            'POST',
+            _buildGitLabApiPath(trackerProject, [
+              'issues',
+              '$issueNumber',
+              'notes',
+              '$commentId',
+              'award_emoji',
+            ]),
+            '-f',
+            'name=eyes',
+          ]);
+          return true;
+        } on ProcessException catch (error) {
+          if (_isGitLabReactionUnsupported(
+            error.message.toLowerCase(),
+            error.errorCode,
+          )) {
+            return false;
+          }
+          rethrow;
+        }
       case IssueTrackerProvider.openproject:
-        return false;
+        try {
+          await _runOpenProjectJson(
+            method: 'PATCH',
+            path: '/api/v3/activities/$commentId/emoji_reactions',
+            body: <String, Object?>{'reaction': 'eyes'},
+          );
+          return true;
+        } on HttpException catch (error) {
+          if (_isOpenProjectEmojiUnsupported(error.message.toLowerCase())) {
+            return false;
+          }
+          rethrow;
+        }
     }
+  }
+
+  bool _isGiteaExistingReactionError(String message) {
+    return message.contains('already') && message.contains('reaction');
+  }
+
+  bool _isGitLabReactionUnsupported(String message, int exitCode) {
+    if (exitCode == 404 || exitCode == 405) {
+      return true;
+    }
+    return message.contains('404') ||
+        message.contains('405') ||
+        message.contains('not found') ||
+        message.contains('method not allowed') ||
+        message.contains('award_emoji') && message.contains('unexpected glab');
+  }
+
+  bool _isGiteaReactionUnsupported(String message) {
+    return message.contains('(404') ||
+        message.contains('not found') ||
+        message.contains('(405') ||
+        message.contains('method not allowed');
+  }
+
+  bool _isOpenProjectEmojiUnsupported(String message) {
+    return message.contains('(404') ||
+        message.contains('not found') ||
+        message.contains('(405') ||
+        message.contains('method not allowed');
   }
 
   Future<String?> getAuthenticatedLogin({

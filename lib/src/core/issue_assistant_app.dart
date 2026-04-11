@@ -402,17 +402,32 @@ class IssueAssistantApp {
 
     if (!selectedResult.shouldReply) {
       final noReplyReactionTarget = _latestHumanComment(project, thread);
-      if (noReplyReactionTarget != null) {
-        final reacted = await issueTrackerClient.createNoReplyReaction(
-          provider: project.provider,
-          trackerProject: project.repo,
-          commentId: noReplyReactionTarget.id,
-        );
+      if (noReplyReactionTarget == null) {
         _log(
           'issue=${project.key}#${issue.number} '
-          'no_reply_reaction=${reacted ? "posted" : "unsupported"} '
-          'comment_id=${noReplyReactionTarget.id}',
+          'no_reply_reaction=skipped reason=no_human_comment',
         );
+      } else {
+        try {
+          final reacted = await issueTrackerClient.createNoReplyReaction(
+            provider: project.provider,
+            trackerProject: project.repo,
+            issueNumber: issue.number,
+            commentId: noReplyReactionTarget.id,
+          );
+          _log(
+            'issue=${project.key}#${issue.number} '
+            'no_reply_reaction=${reacted ? "posted" : "unsupported"} '
+            'comment_id=${noReplyReactionTarget.id}',
+          );
+        } catch (error, stackTrace) {
+          _logger.warning(
+            'issue=${project.key}#${issue.number} '
+            'no_reply_reaction=failed comment_id=${noReplyReactionTarget.id}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       }
       await database.upsertIssueThread(
         projectKey: project.key,
@@ -592,14 +607,12 @@ class IssueAssistantApp {
     ProjectConfig project,
     IssueThread thread,
   ) {
-    final latestComment = thread.latestComment;
-    if (latestComment == null) {
-      return null;
+    for (final comment in thread.comments.reversed) {
+      if (!_looksLikeBot(project, comment.userLogin, comment.body)) {
+        return comment;
+      }
     }
-    if (_looksLikeBot(project, latestComment.userLogin, latestComment.body)) {
-      return null;
-    }
-    return latestComment;
+    return null;
   }
 
   int _countResponsesSinceLatestHuman(
