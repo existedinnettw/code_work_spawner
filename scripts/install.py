@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "httpx>=0.28.1",
+# ]
+# ///
 
 import argparse
 import os
@@ -7,10 +13,9 @@ import shutil
 import stat
 import sys
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
 from pathlib import Path
+
+import httpx
 
 
 REPO = "existedinnettw/code_work_spawner"
@@ -89,31 +94,32 @@ def detect_target() -> tuple[str, str, str]:
 def release_api_url(repo: str, version: str) -> str:
     if version == "latest":
         return f"https://api.github.com/repos/{repo}/releases/latest"
-    encoded_tag = urllib.parse.quote(version, safe="")
+    from urllib.parse import quote
+
+    encoded_tag = quote(version, safe="")
     return f"https://api.github.com/repos/{repo}/releases/tags/{encoded_tag}"
 
 
 def download_release_metadata(repo: str, version: str) -> dict:
     url = release_api_url(repo, version)
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "code_work_spawner-install-script",
-        },
-    )
     try:
-        with urllib.request.urlopen(request) as response:
-            import json
-
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
+        response = httpx.get(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "code_work_spawner-install-script",
+            },
+            timeout=30.0,
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
         raise RuntimeError(
-            f"Failed to fetch release metadata ({exc.code}): {body}"
+            f"Failed to fetch release metadata ({exc.response.status_code}): {exc.response.text}"
         ) from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Failed to fetch release metadata: {exc.reason}") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Failed to fetch release metadata: {exc}") from exc
 
 
 def expected_asset_name(tag: str, target_os: str, arch: str, extension: str) -> str:
@@ -137,21 +143,24 @@ def download_asset(asset: dict, destination: Path) -> None:
     if not download_url:
         raise RuntimeError("Release asset is missing browser_download_url.")
 
-    request = urllib.request.Request(
-        download_url,
-        headers={"User-Agent": "code_work_spawner-install-script"},
-    )
     try:
-        with (
-            urllib.request.urlopen(request) as response,
-            destination.open("wb") as output,
-        ):
-            shutil.copyfileobj(response, output)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Failed to download asset ({exc.code}): {body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Failed to download asset: {exc.reason}") from exc
+        with httpx.stream(
+            "GET",
+            download_url,
+            headers={"User-Agent": "code_work_spawner-install-script"},
+            timeout=60.0,
+            follow_redirects=True,
+        ) as response:
+            response.raise_for_status()
+            with destination.open("wb") as output:
+                for chunk in response.iter_bytes(chunk_size=1024 * 64):
+                    output.write(chunk)
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(
+            f"Failed to download asset ({exc.response.status_code}): {exc.response.text}"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Failed to download asset: {exc}") from exc
 
 
 def install_binary(download_path: Path, destination_path: Path) -> None:
