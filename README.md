@@ -77,6 +77,35 @@ dart run bin/code_work_spawner.dart \
   --tea-command /usr/bin/tea
 ```
 
+## Install Binary
+
+When a GitHub Release is published, `.github/workflows/release.yaml` builds and uploads
+platform binaries named:
+
+- `code_work_spawner-<tag>-linux-x64`
+- `code_work_spawner-<tag>-linux-arm64`
+- `code_work_spawner-<tag>-macos-x64`
+- `code_work_spawner-<tag>-macos-arm64`
+- `code_work_spawner-<tag>-windows-x64.exe`
+
+Install the latest matching release binary into your local user bin path:
+
+```bash
+python3 scripts/install.py
+```
+
+Install a specific tag:
+
+```bash
+python3 scripts/install.py --version v1.0.0
+```
+
+Preview selected asset and destination without downloading:
+
+```bash
+python3 scripts/install.py --dry-run
+```
+
 ## Testing
 
 ```bash
