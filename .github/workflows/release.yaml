@@ -14,21 +14,25 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target_os }}-${{ matrix.target_arch }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target_os: linux
+          - runs_on: ubuntu-24.04
+            target_os: linux
             target_arch: x64
             ext: ''
-          - target_os: linux
+          - runs_on: ubuntu-24.04
+            target_os: linux
             target_arch: arm64
             ext: ''
-          - target_os: macos
+          - runs_on: macos-14
+            target_os: macos
             target_arch: arm64
             ext: ''
-          - target_os: windows
+          - runs_on: windows-2022
+            target_os: windows
             target_arch: x64
             ext: .exe
 
@@ -44,7 +48,14 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: Build executable
-        run: dart compile exe bin/code_work_spawner.dart --target-os=${{ matrix.target_os }} --target-arch=${{ matrix.target_arch }} -o dist/code_work_spawner${{ matrix.ext }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.target_os }}" == "linux" ]]; then
+            dart compile exe bin/code_work_spawner.dart --target-os=linux --target-arch=${{ matrix.target_arch }} -o dist/code_work_spawner${{ matrix.ext }}
+          else
+            dart compile exe bin/code_work_spawner.dart -o dist/code_work_spawner${{ matrix.ext }}
+          fi
 
       - name: Prepare release asset
         shell: bash
@@ -63,7 +74,7 @@ jobs:
   publish:
     name: Upload release assets
     if: github.event_name == 'release'
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     needs: build
     permissions:
       contents: write
