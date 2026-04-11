@@ -4,6 +4,12 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to upload assets to (e.g. v1.0.0)
+        required: true
+        type: string
   pull_request:
     paths:
       - .github/workflows/release.yaml
@@ -96,6 +102,8 @@ jobs:
           sha256sum * > SHA256SUMS.txt
 
       - name: Upload assets to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" release-assets/* --clobber
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
