@@ -7,10 +7,14 @@ on:
     paths:
       - "lib/**"
       - "bin/**"
+      - "test/**"
+      - "pubspec.yaml"
   pull_request:
     paths:
       - "lib/**"
       - "bin/**"
+      - "test/**"
+      - "pubspec.yaml"
 
 jobs:
   dart:

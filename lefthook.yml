@@ -1,3 +1,5 @@
+skip_lfs: true
+
 pre-commit:
   commands:
     format:
@@ -6,3 +8,8 @@ pre-commit:
       run: dart analyze
     # test:
     #   run: dart test
+
+pre-push:
+  commands:
+    require-latest-main:
+      run: uv run scripts/check_branch_up_to_date.py
