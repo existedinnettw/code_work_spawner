@@ -10,6 +10,7 @@ import '../client.dart';
 import '../models.dart';
 import '../../core/process_launcher.dart';
 import 'base.dart';
+import 'gosmee_shared.dart';
 
 class GitHubGosmeeIssueEventSource implements IssueEventSource {
   GitHubGosmeeIssueEventSource({
@@ -20,7 +21,6 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
   }) : _logger = logger;
 
   static const Duration _webhookCoalescingWindow = Duration(milliseconds: 500);
-  static const Duration _processShutdownTimeout = Duration(seconds: 2);
 
   final IssueTrackerClient issueTrackerClient;
   final String gosmeeCommand;
@@ -207,7 +207,11 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
 
     final processes = _gosmeeProcesses.values.toList(growable: false);
     _gosmeeProcesses.clear();
-    await _terminateProcesses(processes);
+    await GosmeeShared.terminateProcesses(
+      processes: processes,
+      sourceLabel: 'github/gosmee',
+      logError: _logError,
+    );
 
     final webhookIds = Map<String, int>.from(_webhookIdsByProject);
     _webhookIdsByProject.clear();
@@ -311,60 +315,14 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
   }
 
   Future<String> _createGosmeeChannelUrl(String localUrl) async {
-    final result = await commandExecutor.run(gosmeeCommand, [
-      '--output',
-      'json',
-      'client',
-      '--new-url',
-      localUrl,
-    ]);
-    _logDebug(
-      'github/gosmee channel_command_result local_url=$localUrl '
-      'exit_code=${result.exitCode} stdout=${_summarizeText(result.stdout.toString())} '
-      'stderr=${_summarizeText(result.stderr.toString())}',
+    return GosmeeShared.createChannelUrl(
+      commandExecutor: commandExecutor,
+      gosmeeCommand: gosmeeCommand,
+      localUrl: localUrl,
+      sourceLabel: 'github/gosmee',
+      log: _log,
+      logDebug: _logDebug,
     );
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        gosmeeCommand,
-        ['--output', 'json', 'client', '--new-url', localUrl],
-        '${result.stdout}\n${result.stderr}',
-        result.exitCode,
-      );
-    }
-
-    final stdoutText = result.stdout.toString().trim();
-    if (stdoutText.isEmpty) {
-      throw const FormatException('gosmee did not print a public URL.');
-    }
-    _log(
-      'github/gosmee channel_raw_output local_url=$localUrl stdout=$stdoutText',
-    );
-
-    try {
-      final decoded = jsonDecode(stdoutText);
-      if (decoded is Map<String, dynamic>) {
-        final url = decoded['url']?.toString().trim();
-        if (url == null || url.isEmpty) {
-          throw const FormatException(
-            'gosmee JSON output did not contain a valid public URL.',
-          );
-        }
-        return url;
-      }
-      if (decoded is String) {
-        final url = decoded.trim();
-        if (url.isEmpty) {
-          throw const FormatException('gosmee did not print a public URL.');
-        }
-        return url;
-      }
-    } on FormatException {
-      if (Uri.tryParse(stdoutText)?.hasScheme ?? false) {
-        return stdoutText;
-      }
-    }
-
-    throw const FormatException('gosmee did not print a valid public URL.');
   }
 
   void _scheduleFlush() {
@@ -427,14 +385,13 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
     required Stream<List<int>> stream,
     required String level,
   }) {
-    utf8.decoder.bind(stream).transform(const LineSplitter()).listen((line) {
-      final message = 'github/gosmee project=${project.key} $level=$line';
-      if (level == 'stderr') {
-        _logger.error(message);
-      } else {
-        _logger.info(message);
-      }
-    });
+    GosmeeShared.pipeProcessLogs(
+      logger: _logger,
+      sourceLabel: 'github/gosmee',
+      projectKey: project.key,
+      stream: stream,
+      level: level,
+    );
   }
 
   void _log(String message) => _logger.info(message);
@@ -442,45 +399,6 @@ class GitHubGosmeeIssueEventSource implements IssueEventSource {
   void _logDebug(String message) => _logger.debug(message);
 
   void _logError(String message) => _logger.error(message);
-
-  Future<void> _terminateProcesses(
-    List<StartedExternalCommand> processes,
-  ) async {
-    for (final process in processes) {
-      process.kill();
-    }
-    for (final process in processes) {
-      await _awaitProcessExit(process);
-    }
-  }
-
-  Future<void> _awaitProcessExit(StartedExternalCommand process) async {
-    try {
-      await process.exitCode.timeout(_processShutdownTimeout);
-      return;
-    } on TimeoutException {
-      process.kill(ProcessSignal.sigkill);
-    } catch (_) {
-      return;
-    }
-
-    try {
-      await process.exitCode.timeout(_processShutdownTimeout);
-    } on TimeoutException {
-      _logError(
-        'github/gosmee process did not exit after sigkill '
-        'timeout_ms=${_processShutdownTimeout.inMilliseconds}',
-      );
-    } catch (_) {}
-  }
-
-  String _summarizeText(String value) {
-    final singleLine = value.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (singleLine.length <= 240) {
-      return singleLine.isEmpty ? '(empty)' : singleLine;
-    }
-    return '${singleLine.substring(0, 240)}...';
-  }
 }
 
 class _QueuedGitHubIssue {

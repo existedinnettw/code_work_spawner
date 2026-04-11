@@ -10,6 +10,7 @@ import '../client.dart';
 import '../models.dart';
 import '../../core/process_launcher.dart';
 import 'base.dart';
+import 'gosmee_shared.dart';
 
 class GiteaGosmeeIssueEventSource implements IssueEventSource {
   GiteaGosmeeIssueEventSource({
@@ -20,7 +21,6 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
   }) : _logger = logger;
 
   static const Duration _webhookCoalescingWindow = Duration(milliseconds: 500);
-  static const Duration _processShutdownTimeout = Duration(seconds: 2);
 
   final IssueTrackerClient issueTrackerClient;
   final String gosmeeCommand;
@@ -207,7 +207,11 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
 
     final processes = _gosmeeProcesses.values.toList(growable: false);
     _gosmeeProcesses.clear();
-    await _terminateProcesses(processes);
+    await GosmeeShared.terminateProcesses(
+      processes: processes,
+      sourceLabel: 'gitea/gosmee',
+      logError: _logError,
+    );
 
     final webhookIds = Map<String, int>.from(_webhookIdsByProject);
     _webhookIdsByProject.clear();
@@ -311,57 +315,14 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
   }
 
   Future<String> _createGosmeeChannelUrl(String localUrl) async {
-    final result = await commandExecutor.run(gosmeeCommand, [
-      '--output',
-      'json',
-      'client',
-      '--new-url',
-      localUrl,
-    ]);
-    _logDebug(
-      'gitea/gosmee channel_command_result local_url=$localUrl '
-      'exit_code=${result.exitCode} stdout=${_summarizeText(result.stdout.toString())} '
-      'stderr=${_summarizeText(result.stderr.toString())}',
+    return GosmeeShared.createChannelUrl(
+      commandExecutor: commandExecutor,
+      gosmeeCommand: gosmeeCommand,
+      localUrl: localUrl,
+      sourceLabel: 'gitea/gosmee',
+      log: _log,
+      logDebug: _logDebug,
     );
-    if (result.exitCode != 0) {
-      throw ProcessException(
-        gosmeeCommand,
-        ['--output', 'json', 'client', '--new-url', localUrl],
-        '${result.stdout}\n${result.stderr}',
-        result.exitCode,
-      );
-    }
-    final stdoutText = result.stdout.toString().trim();
-    if (stdoutText.isEmpty) {
-      throw const FormatException('gosmee did not print a public URL.');
-    }
-    _log(
-      'gitea/gosmee channel_raw_output local_url=$localUrl stdout=$stdoutText',
-    );
-    try {
-      final decodedJson = jsonDecode(stdoutText);
-      if (decodedJson is Map<String, dynamic>) {
-        final publicUrl = decodedJson['url']?.toString().trim();
-        if (publicUrl == null || publicUrl.isEmpty) {
-          throw const FormatException(
-            'gosmee JSON output did not contain a valid public URL.',
-          );
-        }
-        return publicUrl;
-      }
-      if (decodedJson is String) {
-        final publicUrl = decodedJson.trim();
-        if (publicUrl.isEmpty) {
-          throw const FormatException('gosmee did not print a public URL.');
-        }
-        return publicUrl;
-      }
-    } on FormatException {
-      if (Uri.tryParse(stdoutText)?.hasScheme ?? false) {
-        return stdoutText;
-      }
-    }
-    throw const FormatException('gosmee did not print a valid public URL.');
   }
 
   void _scheduleFlush() {
@@ -425,14 +386,13 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
     required Stream<List<int>> stream,
     required String level,
   }) {
-    utf8.decoder.bind(stream).transform(const LineSplitter()).listen((line) {
-      final message = 'gitea/gosmee project=${project.key} $level=$line';
-      if (level == 'stderr') {
-        _logError(message);
-        return;
-      }
-      _log(message);
-    });
+    GosmeeShared.pipeProcessLogs(
+      logger: _logger,
+      sourceLabel: 'gitea/gosmee',
+      projectKey: project.key,
+      stream: stream,
+      level: level,
+    );
   }
 
   void _log(String message) {
@@ -445,45 +405,6 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
 
   void _logError(String message) {
     _logger.error(message);
-  }
-
-  Future<void> _terminateProcesses(
-    List<StartedExternalCommand> processes,
-  ) async {
-    for (final process in processes) {
-      process.kill();
-    }
-    for (final process in processes) {
-      await _awaitProcessExit(process);
-    }
-  }
-
-  Future<void> _awaitProcessExit(StartedExternalCommand process) async {
-    try {
-      await process.exitCode.timeout(_processShutdownTimeout);
-      return;
-    } on TimeoutException {
-      process.kill(ProcessSignal.sigkill);
-    } catch (_) {
-      return;
-    }
-
-    try {
-      await process.exitCode.timeout(_processShutdownTimeout);
-    } on TimeoutException {
-      _logError(
-        'gitea/gosmee process did not exit after sigkill '
-        'timeout_ms=${_processShutdownTimeout.inMilliseconds}',
-      );
-    } catch (_) {}
-  }
-
-  String _summarizeText(String value) {
-    final singleLine = value.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (singleLine.length <= 240) {
-      return singleLine.isEmpty ? '(empty)' : singleLine;
-    }
-    return '${singleLine.substring(0, 240)}...';
   }
 }
 

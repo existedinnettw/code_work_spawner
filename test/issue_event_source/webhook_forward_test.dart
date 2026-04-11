@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../test_support.dart';
+import 'test_helpers.dart';
 
 void registerIssueAssistantAppRunWebhookForwardTests() {
   /// ```gherkin
@@ -29,9 +30,9 @@ void registerIssueAssistantAppRunWebhookForwardTests() {
     /// ```
     test('Reply to a mention received through gh/webhook-forward', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp('cws-webhook-run-');
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandboxRepo = await createSandboxRepo(prefix: 'cws-webhook-run-');
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gh script that forwards one issue_comment webhook event.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -77,25 +78,14 @@ void registerIssueAssistantAppRunWebhookForwardTests() {
       });
 
       // And an orchestrator-style config that uses gh/webhook-forward.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: github
-      eventSource:
-        type: gh/webhook-forward
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'github',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['type: gh/webhook-forward'],
+      );
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
@@ -105,15 +95,7 @@ projects:
       );
 
       // When the long-running app starts and receives the forwarded webhook.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(app: app, isReady: postedBody.exists);
 
       // Then it reads issue comments and posts exactly one reply for that issue.
       expect(await postedBody.exists(), isTrue);
@@ -146,11 +128,11 @@ projects:
     /// ```
     test('Log webhook forward stderr at error level', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-webhook-stderr-',
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-webhook-stderr-',
       );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gh script that writes a webhook creation failure to stderr while forwarding.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -215,17 +197,12 @@ projects:
       AppLogger.addListener(captureLog);
 
       // When the long-running app starts and webhook-forward emits that stderr line.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (records.any(
+      await runAppUntil(
+        app: app,
+        isReady: () async => records.any(
           (record) => record.message.contains('error creating webhook'),
-        )) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+        ),
+      );
       AppLogger.removeListener(captureLog);
 
       // Then the app logs the webhook-forward stderr message at error level.
@@ -255,11 +232,11 @@ projects:
     /// ```
     test('Reconcile a missed GitHub webhook event through polling', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-webhook-reconcile-',
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-webhook-reconcile-',
       );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gh script that starts webhook forwarding without delivering an event.
       final ghScript = File(p.join(sandbox.path, 'gh'));
@@ -380,27 +357,18 @@ projects:
       });
 
       // And an orchestrator-style config that uses gh/webhook-forward with continuous reconciliation.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: github
-      eventSource:
-        type: gh/webhook-forward
-        reconciliation: continuous
-        reconcileInterval: 1s
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'github',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const [
+          'type: gh/webhook-forward',
+          'reconciliation: continuous',
+          'reconcileInterval: 1s',
+        ],
+      );
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
@@ -410,15 +378,7 @@ projects:
       );
 
       // When the long-running app starts and enough time passes for reconciliation polling.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(app: app, isReady: postedBody.exists);
 
       // Then it posts exactly one reply for the issue discovered by polling.
       expect(await postedBody.exists(), isTrue);

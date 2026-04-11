@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../test_support.dart';
+import 'test_helpers.dart';
 
 void registerIssueAssistantAppRunGitHubGosmeeTests() {
   /// ```gherkin
@@ -29,11 +30,9 @@ void registerIssueAssistantAppRunGitHubGosmeeTests() {
     /// ```
     test('Reply to a mention received through gh/gosmee', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-gh-gosmee-run-',
-      );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandboxRepo = await createSandboxRepo(prefix: 'cws-gh-gosmee-run-');
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gosmee script that forwards one GitHub issue_comment webhook event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -95,26 +94,14 @@ void registerIssueAssistantAppRunGitHubGosmeeTests() {
       });
 
       // And an orchestrator-style config that uses gh/gosmee.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: github
-      eventSource:
-        pollInterval: 5m
-        type: gh/gosmee
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'github',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['pollInterval: 5m', 'type: gh/gosmee'],
+      );
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
@@ -132,15 +119,7 @@ projects:
       addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(app: app, isReady: postedBody.exists);
 
       // Then it reads issue comments and posts exactly one reply for that issue.
       expect(await postedBody.exists(), isTrue);
@@ -232,11 +211,11 @@ projects:
       'Delete webhook even when gosmee ignores SIGTERM during shutdown',
       () async {
         // Given a temporary project checkout that can be used as the local repo path.
-        final sandbox = await Directory.systemTemp.createTemp(
-          'cws-gh-gosmee-shutdown-',
+        final sandboxRepo = await createSandboxRepo(
+          prefix: 'cws-gh-gosmee-shutdown-',
         );
-        final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-        await initGitRepo(repoDir);
+        final sandbox = sandboxRepo.sandbox;
+        final repoDir = sandboxRepo.repoDir;
 
         // And a gosmee command that forwards one GitHub webhook event but ignores SIGTERM.
         final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -299,28 +278,14 @@ projects:
         });
 
         // And an orchestrator-style config that uses gh/gosmee.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
+        final configFile = await writeSingleProjectIssueAssistantConfig(
+          sandbox: sandbox,
+          responderPath: responderScript.path,
+          provider: 'github',
+          repo: 'owner/sample',
+          repoPath: repoDir.path,
+          eventSourceLines: const ['pollInterval: 5m', 'type: gh/gosmee'],
         );
-        await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: github
-      eventSource:
-        pollInterval: 5m
-        type: gh/gosmee
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
         final app = await IssueAssistantApp.open(
           config: await AppConfig.load(configFile.path),
           databasePath: p.join(sandbox.path, 'state.sqlite3'),
@@ -331,15 +296,7 @@ projects:
         );
 
         // When the long-running app starts and then closes.
-        final runFuture = app.run();
-        for (var attempt = 0; attempt < 200; attempt += 1) {
-          if (await postedBody.exists()) {
-            break;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 100));
-        }
-        await app.close();
-        await runFuture;
+        await runAppUntil(app: app, isReady: postedBody.exists);
 
         // Then the app still deletes the GitHub webhook for the project.
         final ghLogLines = await ghLog.readAsLines();

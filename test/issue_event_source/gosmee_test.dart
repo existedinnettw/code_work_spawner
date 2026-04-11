@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../test_support.dart';
+import 'test_helpers.dart';
 
 void registerIssueAssistantAppRunGosmeeTests() {
   /// ```gherkin
@@ -30,9 +31,9 @@ void registerIssueAssistantAppRunGosmeeTests() {
     /// ```
     test('Reply to a mention received through tea/gosmee', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp('cws-gosmee-run-');
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandboxRepo = await createSandboxRepo(prefix: 'cws-gosmee-run-');
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gosmee script that forwards one Gitea issue_comment webhook event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -101,26 +102,14 @@ void registerIssueAssistantAppRunGosmeeTests() {
       });
 
       // And an orchestrator-style config that uses tea/gosmee.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: gitea
-      eventSource:
-        pollInterval: 5m
-        type: tea/gosmee
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'gitea',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['pollInterval: 5m', 'type: tea/gosmee'],
+      );
       await File(p.join(sandbox.path, '.env')).writeAsString('''
 CWS_GITEA_HOST=${giteaServer.baseUrl}
 CWS_GITEA_TOKEN=test-token
@@ -141,15 +130,10 @@ CWS_GITEA_TOKEN=test-token
       addTearDown(() => AppLogger.removeListener(captureLog));
 
       // When the long-running app starts and receives the forwarded webhook.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (giteaServer.postedBodies.isNotEmpty) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(
+        app: app,
+        isReady: () async => giteaServer.postedBodies.isNotEmpty,
+      );
 
       // Then it reads issue comments and posts exactly one reply for that issue.
       expect(giteaServer.postedBodies, hasLength(1));
@@ -225,11 +209,11 @@ CWS_GITEA_TOKEN=test-token
     /// ```
     test('Reconcile a missed Gitea gosmee event through polling', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-gosmee-reconcile-',
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-gosmee-reconcile-',
       );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gosmee script that starts forwarding without delivering an event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -296,27 +280,18 @@ CWS_GITEA_TOKEN=test-token
       });
 
       // And an orchestrator-style config that uses tea/gosmee with continuous reconciliation.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: gitea
-      eventSource:
-        type: tea/gosmee
-        reconciliation: continuous
-        reconcileInterval: 1s
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'gitea',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const [
+          'type: tea/gosmee',
+          'reconciliation: continuous',
+          'reconcileInterval: 1s',
+        ],
+      );
       await File(p.join(sandbox.path, '.env')).writeAsString('''
 CWS_GITEA_HOST=${giteaServer.baseUrl}
 CWS_GITEA_TOKEN=test-token
@@ -330,15 +305,10 @@ CWS_GITEA_TOKEN=test-token
       );
 
       // When the long-running app starts and enough time passes for reconciliation polling.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (giteaServer.postedBodies.isNotEmpty) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(
+        app: app,
+        isReady: () async => giteaServer.postedBodies.isNotEmpty,
+      );
 
       // Then it posts exactly one reply for the issue discovered by polling.
       expect(giteaServer.postedBodies, hasLength(1));
@@ -378,11 +348,11 @@ CWS_GITEA_TOKEN=test-token
     /// ```
     test('Delete webhook even when gosmee ignores SIGTERM during shutdown', () async {
       // Given a temporary project checkout that can be used as the local repo path.
-      final sandbox = await Directory.systemTemp.createTemp(
-        'cws-gosmee-shutdown-',
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-gosmee-shutdown-',
       );
-      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
-      await initGitRepo(repoDir);
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
 
       // And a gosmee command that forwards one Gitea webhook event but ignores SIGTERM.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
@@ -451,26 +421,14 @@ CWS_GITEA_TOKEN=test-token
       });
 
       // And an orchestrator-style config that uses tea/gosmee.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
-      await configFile.writeAsString('''
-defaults:
-  issueAssistant:
-    enabled: true
-    mentionTriggers: ["@helper"]
-    responders:
-      - id: primary
-        command: ${responderScript.path}
-        timeout: 1m
-projects:
-  sample:
-    issueTracker:
-      provider: gitea
-      eventSource:
-        pollInterval: 5m
-        type: tea/gosmee
-    repo: owner/sample
-    path: ${repoDir.path}
-''');
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'gitea',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['pollInterval: 5m', 'type: tea/gosmee'],
+      );
       await File(p.join(sandbox.path, '.env')).writeAsString('''
 CWS_GITEA_HOST=${giteaServer.baseUrl}
 CWS_GITEA_TOKEN=test-token
@@ -484,15 +442,10 @@ CWS_GITEA_TOKEN=test-token
       );
 
       // When the long-running app starts and then closes.
-      final runFuture = app.run();
-      for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (giteaServer.postedBodies.isNotEmpty) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      }
-      await app.close();
-      await runFuture;
+      await runAppUntil(
+        app: app,
+        isReady: () async => giteaServer.postedBodies.isNotEmpty,
+      );
 
       // Then the app still deletes the Gitea webhook for the project.
       expect(giteaServer.deletedWebhookIds, contains(81));
