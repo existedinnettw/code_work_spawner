@@ -20,6 +20,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
   }) : _logger = logger;
 
   static const Duration _webhookCoalescingWindow = Duration(milliseconds: 500);
+  static const Duration _processShutdownTimeout = Duration(seconds: 2);
 
   final IssueTrackerClient issueTrackerClient;
   final String gosmeeCommand;
@@ -206,12 +207,7 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
 
     final processes = _gosmeeProcesses.values.toList(growable: false);
     _gosmeeProcesses.clear();
-    for (final process in processes) {
-      process.kill();
-    }
-    for (final process in processes) {
-      await process.exitCode.catchError((_) => 0);
-    }
+    await _terminateProcesses(processes);
 
     final webhookIds = Map<String, int>.from(_webhookIdsByProject);
     _webhookIdsByProject.clear();
@@ -449,6 +445,37 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
 
   void _logError(String message) {
     _logger.error(message);
+  }
+
+  Future<void> _terminateProcesses(
+    List<StartedExternalCommand> processes,
+  ) async {
+    for (final process in processes) {
+      process.kill();
+    }
+    for (final process in processes) {
+      await _awaitProcessExit(process);
+    }
+  }
+
+  Future<void> _awaitProcessExit(StartedExternalCommand process) async {
+    try {
+      await process.exitCode.timeout(_processShutdownTimeout);
+      return;
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+    } catch (_) {
+      return;
+    }
+
+    try {
+      await process.exitCode.timeout(_processShutdownTimeout);
+    } on TimeoutException {
+      _logError(
+        'gitea/gosmee process did not exit after sigkill '
+        'timeout_ms=${_processShutdownTimeout.inMilliseconds}',
+      );
+    } catch (_) {}
   }
 
   String _summarizeText(String value) {

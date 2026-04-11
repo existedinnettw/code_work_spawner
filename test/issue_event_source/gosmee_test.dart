@@ -365,6 +365,138 @@ CWS_GITEA_TOKEN=test-token
         isTrue,
       );
     });
+
+    /// ```gherkin
+    /// Scenario: Delete webhook even when gosmee ignores SIGTERM during shutdown
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And a gosmee command that forwards one Gitea webhook event but ignores SIGTERM
+    ///   And a Gitea API fixture that can manage webhooks and post issue comments
+    ///   And a responder that emits a planning reply
+    ///   And an orchestrator-style config that uses tea/gosmee
+    ///   When the long-running app starts and then closes
+    ///   Then the app still deletes the Gitea webhook for the project
+    /// ```
+    test('Delete webhook even when gosmee ignores SIGTERM during shutdown', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandbox = await Directory.systemTemp.createTemp(
+        'cws-gosmee-shutdown-',
+      );
+      final repoDir = await Directory(p.join(sandbox.path, 'repo')).create();
+      await initGitRepo(repoDir);
+
+      // And a gosmee command that forwards one Gitea webhook event but ignores SIGTERM.
+      final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
+      final issue = {
+        'index': 21,
+        'title': 'Shutdown should still unregister webhook',
+        'body': 'Please react before shutdown.',
+        'state': 'open',
+        'url': 'https://gitea.example.test/owner/sample/issues/21',
+        'updated_at': '2026-04-08T07:00:00Z',
+        'poster': {'login': 'reporter'},
+        'labels': const <Map<String, Object?>>[],
+      };
+      final comments = [
+        {
+          'id': 151,
+          'body': '@helper verify webhook cleanup on shutdown',
+          'url':
+              'https://gitea.example.test/owner/sample/issues/21#issuecomment-151',
+          'created_at': '2026-04-08T07:00:00Z',
+          'updated_at': '2026-04-08T07:00:00Z',
+          'poster': {'login': 'reporter'},
+        },
+      ];
+      registerFakeGosmeeCommand(
+        command: gosmeeScript.path,
+        publicUrl: 'https://gosmee.example.test/shutdown',
+        payload: {
+          'action': 'created',
+          'issue': issue,
+          'comment': comments.last,
+          'repository': {'full_name': 'owner/sample'},
+        },
+        exitOnSigterm: false,
+      );
+
+      // And a Gitea API fixture that can manage webhooks and post issue comments.
+      final giteaServer = await FakeGiteaApiServer.start(
+        issueListResponsesByRepo: {
+          'owner/sample': const <Map<String, Object?>>[],
+        },
+        commentResponsesByRepo: {
+          'owner/sample': {21: comments},
+        },
+        postCommentResponsesByRepo: {
+          'owner/sample': {
+            21: {
+              'id': 803,
+              'body': 'posted',
+              'html_url': 'https://gitea.example.test/comment/803',
+            },
+          },
+        },
+        viewerLogin: 'tea-octocat',
+      );
+      addTearDown(giteaServer.close);
+
+      // And a responder that emits a planning reply.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown':
+            'Plan:\n- ensure webhook cleanup when shutdown races forwarding',
+        'summary': 'posted shutdown cleanup advice',
+      });
+
+      // And an orchestrator-style config that uses tea/gosmee.
+      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    enabled: true
+    mentionTriggers: ["@helper"]
+    responders:
+      - id: primary
+        command: ${responderScript.path}
+        timeout: 1m
+projects:
+  sample:
+    issueTracker:
+      provider: gitea
+      eventSource:
+        pollInterval: 5m
+        type: tea/gosmee
+    repo: owner/sample
+    path: ${repoDir.path}
+''');
+      await File(p.join(sandbox.path, '.env')).writeAsString('''
+CWS_GITEA_HOST=${giteaServer.baseUrl}
+CWS_GITEA_TOKEN=test-token
+''');
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        gosmeeCommand: gosmeeScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
+      );
+
+      // When the long-running app starts and then closes.
+      final runFuture = app.run();
+      for (var attempt = 0; attempt < 200; attempt += 1) {
+        if (giteaServer.postedBodies.isNotEmpty) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      await app.close();
+      await runFuture;
+
+      // Then the app still deletes the Gitea webhook for the project.
+      expect(giteaServer.deletedWebhookIds, contains(81));
+    });
   });
 }
 
