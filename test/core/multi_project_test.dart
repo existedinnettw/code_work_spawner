@@ -173,6 +173,8 @@ projects:
           config: await AppConfig.load(configFile.path),
           databasePath: p.join(sandbox.path, 'state.sqlite3'),
           ghCommand: ghScript.path,
+          responderRunner: fakeResponderRunner(),
+          commandExecutor: fakeExternalCommandExecutor(),
         );
 
         // When the app processes one polling cycle.
@@ -234,24 +236,21 @@ projects:
       await initGitRepo(repoDir);
 
       // And Gitea issue data containing a comment with an explicit assistant mention.
-      final teaScript = File(p.join(sandbox.path, 'tea'));
-      final teaLog = File(p.join(sandbox.path, 'tea-log.jsonl'));
-      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
-      await writeFakeTeaScript(
-        teaScript: teaScript,
+      final giteaServer = await FakeGiteaApiServer.start(
         issueListResponsesByRepo: {
           'owner/sample': [
             {
-              'index': 12,
+              'number': 12,
               'title': 'Need architecture help',
               'body': 'Please review the API layering.',
               'state': 'open',
-              'url': 'https://gitea.example.test/owner/sample/issues/12',
+              'html_url': 'https://gitea.example.test/owner/sample/issues/12',
               'updated_at': '2026-04-04T12:00:00Z',
-              'poster': {'login': 'reporter'},
+              'user': {'login': 'reporter'},
               'labels': [
                 {'name': 'help'},
               ],
+              'pull_request': null,
             },
           ],
         },
@@ -261,22 +260,28 @@ projects:
               {
                 'id': 50,
                 'body': '@helper can you plan the architecture?',
-                'url':
+                'html_url':
                     'https://gitea.example.test/owner/sample/issues/12#issuecomment-50',
                 'created_at': '2026-04-04T12:00:00Z',
                 'updated_at': '2026-04-04T12:00:00Z',
-                'poster': {'login': 'reporter'},
+                'user': {'login': 'reporter'},
               },
             ],
           },
         },
-        postCommentIssueNumbersByRepo: {
-          'owner/sample': {12},
+        postCommentResponsesByRepo: {
+          'owner/sample': {
+            12: {
+              'id': 701,
+              'body': 'posted',
+              'html_url':
+                  'https://gitea.example.test/owner/sample/issues/12#issuecomment-701',
+            },
+          },
         },
-        teaLog: teaLog,
-        postedBodyFile: postedBody,
         viewerLogin: 'tea-octocat',
       );
+      addTearDown(giteaServer.close);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
@@ -308,36 +313,45 @@ projects:
     path: ${repoDir.path}
     defaultBranch: main
 ''');
+      await File(p.join(sandbox.path, '.env')).writeAsString('''
+CWS_GITEA_HOST=${giteaServer.baseUrl}
+CWS_GITEA_TOKEN=test-token
+''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
-        teaCommand: teaScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the app processes one polling cycle.
       await app.runOnce();
       await app.close();
 
-      // Then it reads issue comments and posts exactly one reply through tea for that issue.
-      final logLines = await teaLog.readAsLines();
+      // Then it reads issue comments and posts exactly one reply through the Gitea API for that issue.
       expect(
-        logLines
+        giteaServer.requestPaths
             .where(
-              (line) => line.contains('repos/owner/sample/issues?state=open'),
+              (path) => path.contains('/api/v1/repos/owner/sample/issues?'),
             )
             .length,
         1,
       );
       expect(
-        logLines
+        giteaServer.requestPaths
             .where(
-              (line) => line.contains('repos/owner/sample/issues/12/comments'),
+              (path) => path.contains(
+                '/api/v1/repos/owner/sample/issues/12/comments',
+              ),
             )
             .length,
         2,
       );
-      final postedComment = await postedBody.readAsString();
-      expect(postedComment, contains('via `tea`'));
+      final postedComment =
+          (jsonDecode(giteaServer.postedBodies.single)
+                  as Map<String, dynamic>)['body']
+              as String;
+      expect(postedComment, contains('via `gitea`'));
       expect(postedComment, contains('@tea-octocat'));
       expect(
         postedComment,
@@ -409,6 +423,8 @@ OP_CLI_TOKEN=test-token
         final app = await IssueAssistantApp.open(
           config: await AppConfig.load(configFile.path),
           databasePath: p.join(sandbox.path, 'state.sqlite3'),
+          responderRunner: fakeResponderRunner(),
+          commandExecutor: fakeExternalCommandExecutor(),
         );
 
         // When the app processes one polling cycle.

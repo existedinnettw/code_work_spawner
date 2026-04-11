@@ -14,7 +14,7 @@ Future<void> writeFakeTeaScript({
   String? viewerLogin,
   bool failViewerLookup = false,
 }) async {
-  final normalizedPostCommentIssueNumbersByRepo =
+  final postIssueNumbers =
       postCommentIssueNumbersByRepo ??
       <String, Set<int>>{
         for (final entry in issueListResponsesByRepo.entries)
@@ -23,103 +23,92 @@ Future<void> writeFakeTeaScript({
               .whereType<int>()
               .toSet(),
       };
-
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (teaLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(teaLog.path)}"',
-    );
-  }
-
-  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
-  if (failViewerLookup) {
-    buffer
-      ..writeln(r'''  echo "viewer lookup failed" >&2''')
-      ..writeln('  exit 1')
-      ..writeln('fi');
-  } else {
-    buffer
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode({'login': viewerLogin ?? 'tea-user'}))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  for (final entry in issueListResponsesByRepo.entries) {
-    final repo = entry.key;
-    buffer
-      ..writeln(
-        r'''if [[ "$1" == "api" && "$4" == "repos/'''
-        '$repo'
-        r'''/issues?state=open"* ]]; then''',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode(entry.value))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  for (final repoEntry in commentResponsesByRepo.entries) {
-    final repo = repoEntry.key;
-    for (final entry in repoEntry.value.entries) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"repos/$repo/issues/${entry.key}/comments?limit=100" ]]; then',
-        )
-        ..writeln("  cat <<'JSON'")
-        ..writeln(jsonEncode(entry.value))
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
+  fakeCommandHandlers[teaScript.path] = (arguments, {timeout}) async {
+    if (teaLog != null) {
+      await teaLog.writeAsString(
+        '${arguments.join(' ')}\n',
+        mode: FileMode.append,
+      );
     }
-  }
 
-  for (final repoEntry in normalizedPostCommentIssueNumbersByRepo.entries) {
-    final repo = repoEntry.key;
-    for (final issueNumber in repoEntry.value) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"repos/$repo/issues/$issueNumber/comments" ]]; then',
-        )
-        ..writeln(r'''  for arg in "$@"; do''')
-        ..writeln(r'''    :''');
-      if (postedBodyFile != null) {
-        buffer
-          ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
-          ..writeln(
-            r'''      printf '%s' "${arg#body=}" > '''
-            '"${bashScriptPath(postedBodyFile.path)}"',
-          )
-          ..writeln(r'''    fi''');
+    ProcessResult result(
+      Object? stdout, {
+      int exitCode = 0,
+      String stderr = '',
+    }) {
+      return ProcessResult(
+        0,
+        exitCode,
+        stdout is String ? stdout : jsonEncode(stdout),
+        stderr,
+      );
+    }
+
+    if (_matches(arguments, 0, 'api') && _matches(arguments, 1, 'user')) {
+      if (failViewerLookup) {
+        return result('', exitCode: 1, stderr: 'viewer lookup failed\n');
       }
-      buffer
-        ..writeln(r'''  done''')
-        ..writeln("  cat <<'JSON'")
-        ..writeln(
-          jsonEncode({
+      return result({'login': viewerLogin ?? 'tea-user'});
+    }
+
+    for (final entry in issueListResponsesByRepo.entries) {
+      if (_matches(arguments, 0, 'api') &&
+          arguments.length > 3 &&
+          arguments[3].startsWith('repos/${entry.key}/issues?state=open')) {
+        return result(entry.value);
+      }
+    }
+
+    for (final repoEntry in commentResponsesByRepo.entries) {
+      for (final entry in repoEntry.value.entries) {
+        if (_matches(arguments, 0, 'api') &&
+            _matches(
+              arguments,
+              3,
+              'repos/${repoEntry.key}/issues/${entry.key}/comments?limit=100',
+            )) {
+          return result(entry.value);
+        }
+      }
+    }
+
+    for (final repoEntry in postIssueNumbers.entries) {
+      for (final issueNumber in repoEntry.value) {
+        if (_matches(arguments, 0, 'api') &&
+            _matches(
+              arguments,
+              3,
+              'repos/${repoEntry.key}/issues/$issueNumber/comments',
+            )) {
+          final body = _valueArg(arguments, 'body=');
+          if (postedBodyFile != null && body != null) {
+            await postedBodyFile.writeAsString(body);
+          }
+          return result({
             'id': 701,
             'url': 'https://gitea.example.test/comment/701',
             'body': 'posted',
-          }),
-        )
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
+          });
+        }
+      }
+    }
+
+    return result(
+      '',
+      exitCode: 1,
+      stderr: 'unexpected tea args: ${arguments.join(' ')}\n',
+    );
+  };
+}
+
+bool _matches(List<String> arguments, int index, String value) =>
+    arguments.length > index && arguments[index] == value;
+
+String? _valueArg(List<String> arguments, String prefix) {
+  for (final argument in arguments) {
+    if (argument.startsWith(prefix)) {
+      return argument.substring(prefix.length);
     }
   }
-
-  buffer
-    ..writeln(r'''echo "unexpected tea args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await teaScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(teaScript);
+  return null;
 }

@@ -134,6 +134,8 @@ projects:
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         glabCommand: glabScript.path,
         gosmeeCommand: gosmeeScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and receives the forwarded webhook.

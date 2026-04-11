@@ -100,6 +100,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and receives the forwarded webhook.
@@ -152,34 +154,36 @@ projects:
 
       // And a gh script that writes a webhook creation failure to stderr while forwarding.
       final ghScript = File(p.join(sandbox.path, 'gh'));
-      await ghScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ "\$1" == "webhook" && "\$2" == "forward" ]]; then
-  echo "Error: error creating webhook: HTTP 422: Validation Failed (https://api.github.com/repos/existedinnettw/code_work_spawner/hooks)" >&2
-  while true; do
-    sleep 60
-  done
-fi
-
-if [[ "\$1" == "api" && "\$2" == "user" ]]; then
-  cat <<'JSON'
-${jsonEncode({'login': 'octocat'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "search/issues" ]]; then
-  cat <<'JSON'
-{"total_count":0,"incomplete_results":false,"items":[]}
-JSON
-  exit 0
-fi
-
-echo "unexpected gh args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(ghScript);
+      fakeCommandHandlers[ghScript.path] = (arguments, {timeout}) async {
+        if (arguments.length >= 2 &&
+            arguments[0] == 'api' &&
+            arguments[1] == 'user') {
+          return ProcessResult(0, 0, '{"login":"octocat"}', '');
+        }
+        if (arguments.length >= 4 &&
+            arguments[0] == 'api' &&
+            arguments[3] == 'search/issues') {
+          return ProcessResult(
+            0,
+            0,
+            '{"total_count":0,"incomplete_results":false,"items":[]}',
+            '',
+          );
+        }
+        return ProcessResult(
+          0,
+          1,
+          '',
+          'unexpected gh args: ${arguments.join(' ')}\n',
+        );
+      };
+      fakeStartedCommandHandlers[ghScript.path] = (arguments) async {
+        final process = FakeStartedExternalCommand()
+          ..addStderr(
+            'Error: error creating webhook: HTTP 422: Validation Failed (https://api.github.com/repos/existedinnettw/code_work_spawner/hooks)\n',
+          );
+        return process;
+      };
 
       // And an orchestrator-style config that uses gh/webhook-forward.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
@@ -200,6 +204,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
       final records = <AppLogRecord>[];
       void captureLog(AppLogRecord record) {
@@ -284,69 +290,85 @@ projects:
           'user': {'login': 'reporter'},
         },
       ];
-      await ghScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-    printf '%s\n' "\$*" >> "${bashScriptPath(ghLog.path)}"
-
-if [[ "\$1" == "api" && "\$2" == "user" ]]; then
-  cat <<'JSON'
-${jsonEncode({'login': 'octocat'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "search/issues" ]]; then
-  count=0
-  if [[ -f "${bashScriptPath(searchCountFile.path)}" ]]; then
-    count="\$(cat "${bashScriptPath(searchCountFile.path)}")"
-  fi
-  count=\$((count + 1))
-  printf '%s' "\$count" > "${bashScriptPath(searchCountFile.path)}"
-  if [[ "\$count" -eq 1 ]]; then
-    cat <<'JSON'
-{"total_count":0,"incomplete_results":false,"items":[]}
-JSON
-  else
-    cat <<'JSON'
-${jsonEncode({
-        'total_count': 1,
-        'incomplete_results': false,
-        'items': [searchItem],
-      })}
-JSON
-  fi
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments?per_page=100" ]]; then
-  cat <<'JSON'
-${jsonEncode(comments)}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments" ]]; then
-  for arg in "\$@"; do
-    if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
-    fi
-  done
-  cat <<'JSON'
-${jsonEncode({'id': 703, 'html_url': 'https://example.test/comment/703', 'body': 'posted'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "webhook" && "\$2" == "forward" ]]; then
-  while true; do
-    sleep 60
-  done
-fi
-
-echo "unexpected gh args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(ghScript);
+      fakeCommandHandlers[ghScript.path] = (arguments, {timeout}) async {
+        await ghLog.writeAsString(
+          '${arguments.join(' ')}\n',
+          mode: FileMode.append,
+        );
+        if (arguments.length >= 2 &&
+            arguments[0] == 'api' &&
+            arguments[1] == 'user') {
+          return ProcessResult(0, 0, '{"login":"octocat"}', '');
+        }
+        final path = arguments.length > 3 ? arguments[3] : '';
+        if (arguments.length >= 4 &&
+            arguments[0] == 'api' &&
+            path == 'search/issues') {
+          var count = 0;
+          if (await searchCountFile.exists()) {
+            count = int.parse(await searchCountFile.readAsString());
+          }
+          count += 1;
+          await searchCountFile.writeAsString(count.toString());
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode(
+              count == 1
+                  ? {
+                      'total_count': 0,
+                      'incomplete_results': false,
+                      'items': <Object?>[],
+                    }
+                  : {
+                      'total_count': 1,
+                      'incomplete_results': false,
+                      'items': [searchItem],
+                    },
+            ),
+            '',
+          );
+        }
+        if (arguments.length >= 4 &&
+            arguments[0] == 'api' &&
+            path == 'repos/owner/sample/issues/18/comments?per_page=100') {
+          return ProcessResult(0, 0, jsonEncode(comments), '');
+        }
+        if (arguments.length >= 4 &&
+            arguments[0] == 'api' &&
+            path == 'repos/owner/sample/issues/18/comments') {
+          final body = arguments
+              .where((argument) => argument.startsWith('body='))
+              .map((argument) => argument.substring('body='.length))
+              .firstOrNull;
+          if (body != null) {
+            await postedBody.writeAsString(body);
+          }
+          return ProcessResult(
+            0,
+            0,
+            jsonEncode({
+              'id': 703,
+              'html_url': 'https://example.test/comment/703',
+              'body': 'posted',
+            }),
+            '',
+          );
+        }
+        return ProcessResult(
+          0,
+          1,
+          '',
+          'unexpected gh args: ${arguments.join(' ')}\n',
+        );
+      };
+      fakeStartedCommandHandlers[ghScript.path] = (arguments) async {
+        await ghLog.writeAsString(
+          '${arguments.join(' ')}\n',
+          mode: FileMode.append,
+        );
+        return FakeStartedExternalCommand();
+      };
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
@@ -383,6 +405,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and enough time passes for reconciliation polling.

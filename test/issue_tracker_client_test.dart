@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_work_spawner/code_work_spawner.dart';
@@ -144,7 +146,10 @@ void main() {
         postedBodyFile: postedBodyFile,
         viewerLogin: 'glab-user',
       );
-      final client = IssueTrackerClient(glabCommand: glabScript.path);
+      final client = IssueTrackerClient(
+        glabCommand: glabScript.path,
+        commandExecutor: fakeExternalCommandExecutor(),
+      );
 
       // When the tracker client fetches updates, loads the thread, resolves the login, and posts a comment.
       final issues = await client.fetchUpdatedIssuesForRepos(
@@ -189,95 +194,405 @@ void main() {
   /// Feature: Gitea tracker client integration
   ///
   ///   As a maintainer debugging Gitea tracker failures
-  ///   I want tea-specific API and webhook errors to preserve the original cause
-  ///   So that misconfigured repos and tea output changes are easy to trace
+  ///   I want issue operations to use the Gitea HTTP API directly
+  ///   So that issue polling and replies do not depend on `tea api`
   /// ```
   group('IssueTrackerClient Gitea', () {
-    /// ```gherkin
-    /// Scenario: Read a webhook id from tea plain-text success output
-    ///   Given a fake tea executable whose webhook create command prints plain text instead of JSON
-    ///   When the tracker client creates a Gitea webhook
-    ///   Then it still extracts and returns the created webhook id
-    /// ```
-    test('Read a webhook id from tea plain-text success output', () async {
-      // Given a fake tea executable whose webhook create command prints plain text instead of JSON.
-      final sandbox = await Directory.systemTemp.createTemp('cws-tea-webhook-');
-      final teaScript = File(p.join(sandbox.path, 'tea'));
-      await teaScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
+    setUp(() {
+      AppEnvironment.resetForTest();
+    });
 
-if [[ "\$1" == "webhooks" && "\$2" == "create" ]]; then
-  printf '%s\n' 'Webhook created successfully (ID: 40)'
-  exit 0
-fi
-
-echo "unexpected tea args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(teaScript);
-      final client = IssueTrackerClient(teaCommand: teaScript.path);
-
-      // When the tracker client creates a Gitea webhook.
-      final webhookId = await client.createGiteaIssueWebhook(
-        repo: RepositorySlug('owner', 'sample'),
-        url: 'https://gosmee.example.test/sample',
-      );
-
-      // Then it still extracts and returns the created webhook id.
-      expect(webhookId, 40);
+    tearDown(() {
+      AppEnvironment.resetForTest();
     });
 
     /// ```gherkin
-    /// Scenario: Surface Gitea API error details when issue listing returns an error object
-    ///   Given a fake tea executable whose issue list request returns a Gitea error object
-    ///   When the tracker client fetches updated Gitea issues
-    ///   Then it throws a format error that includes the repo and API error details
+    /// Scenario: Create a Gitea webhook through the HTTP API
+    ///   Given a local Gitea API server that accepts webhook creation requests
+    ///   When the tracker client creates a Gitea webhook
+    ///   Then it returns the created webhook id
+    ///   And the webhook options are sent to the Gitea API
     /// ```
-    test(
-      'Surface Gitea API error details when issue listing returns an error object',
-      () async {
-        // Given a fake tea executable whose issue list request returns a Gitea error object.
-        final sandbox = await Directory.systemTemp.createTemp('cws-tea-api-');
-        final teaScript = File(p.join(sandbox.path, 'tea'));
-        await teaScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
+    test('Create a Gitea webhook through the HTTP API', () async {
+      // Given a local Gitea API server that accepts webhook creation requests.
+      final giteaServer = await FakeGiteaApiServer.start();
+      _configureGiteaTestEnvironmentFromBaseUrl(giteaServer.baseUrl);
+      final client = IssueTrackerClient();
 
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues?state=open"* ]]; then
-  cat <<'JSON'
-{"errors":["user redirect does not exist [name: owner]"],"message":"GetUserByName","url":"https://gitea.example.test/api/swagger"}
-JSON
-  exit 0
-fi
+      try {
+        // When the tracker client creates a Gitea webhook.
+        final webhookId = await client.createGiteaIssueWebhook(
+          repo: RepositorySlug('owner', 'sample'),
+          url: 'https://gosmee.example.test/sample',
+        );
 
-echo "unexpected tea args: \$*" >&2
-exit 1
-''');
-        await makeScriptExecutable(teaScript);
-        final client = IssueTrackerClient(teaCommand: teaScript.path);
+        // Then it returns the created webhook id.
+        expect(webhookId, 81);
 
-        // When the tracker client fetches updated Gitea issues.
-        final future = client.fetchUpdatedIssuesForRepos(
+        // And the webhook options are sent to the Gitea API.
+        expect(giteaServer.createdWebhooks, hasLength(1));
+        expect(giteaServer.createdWebhooks.single['type'], 'gitea');
+        expect(giteaServer.createdWebhooks.single['active'], isTrue);
+        expect(giteaServer.createdWebhooks.single['events'], [
+          'issues',
+          'issue_comment',
+        ]);
+        expect(
+          (giteaServer.createdWebhooks.single['config'] as Map)['url'],
+          'https://gosmee.example.test/sample',
+        );
+      } finally {
+        await giteaServer.close();
+      }
+    });
+
+    /// ```gherkin
+    /// Scenario: Fetch Gitea issues, comments, and login through the HTTP API
+    ///   Given a local Gitea API server with one issue and one comment
+    ///   When the tracker client fetches updates, loads the thread, resolves the login, and posts a comment
+    ///   Then the Gitea issue payload is normalized into the shared issue summary model
+    ///   And the posted comment response is returned to the caller
+    /// ```
+    test('Fetch Gitea issues, comments, and login through the HTTP API', () async {
+      // Given a local Gitea API server with one issue and one comment.
+      String? postedBody;
+      final server = await _startGiteaApiServer((request) async {
+        if (request.uri.path == '/api/v1/repos/owner/sample/issues' &&
+            request.method == 'GET') {
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'number': 12,
+                  'title': 'Need Gitea support',
+                  'body': 'Please add direct API support.',
+                  'state': 'open',
+                  'html_url':
+                      'https://gitea.example.test/owner/sample/issues/12',
+                  'updated_at': '2026-04-04T12:00:00Z',
+                  'user': <String, Object?>{'login': 'reporter'},
+                  'labels': <Map<String, Object?>>[
+                    <String, Object?>{'name': 'enhancement'},
+                  ],
+                  'pull_request': null,
+                },
+              ]),
+            );
+          await request.response.close();
+          return;
+        }
+
+        if (request.uri.path ==
+                '/api/v1/repos/owner/sample/issues/12/comments' &&
+            request.method == 'GET') {
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<Map<String, Object?>>[
+                <String, Object?>{
+                  'id': 501,
+                  'body': 'Working on it.',
+                  'created_at': '2026-04-04T12:05:00Z',
+                  'updated_at': '2026-04-04T12:06:00Z',
+                  'html_url':
+                      'https://gitea.example.test/owner/sample/issues/12#issuecomment-501',
+                  'user': <String, Object?>{'login': 'maintainer'},
+                },
+              ]),
+            );
+          await request.response.close();
+          return;
+        }
+
+        if (request.uri.path == '/api/v1/user' && request.method == 'GET') {
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode(<String, Object?>{'login': 'gitea-user'}));
+          await request.response.close();
+          return;
+        }
+
+        if (request.uri.path ==
+                '/api/v1/repos/owner/sample/issues/12/comments' &&
+            request.method == 'POST') {
+          postedBody =
+              (jsonDecode(await utf8.decodeStream(request))
+                      as Map<String, dynamic>)['body']
+                  as String?;
+          request.response
+            ..statusCode = HttpStatus.created
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<String, Object?>{
+                'id': 901,
+                'body': 'posted',
+                'html_url':
+                    'https://gitea.example.test/owner/sample/issues/12#issuecomment-901',
+              }),
+            );
+          await request.response.close();
+          return;
+        }
+
+        request.response
+          ..statusCode = HttpStatus.notFound
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(<String, Object?>{'message': 'not found'}));
+        await request.response.close();
+      });
+      _configureGiteaTestEnvironment(server);
+      final client = IssueTrackerClient();
+
+      try {
+        // When the tracker client fetches updates, loads the thread, resolves the login, and posts a comment.
+        final issues = await client.fetchUpdatedIssuesForRepos(
           provider: IssueTrackerProvider.gitea,
           trackerProjects: const <String>['owner/sample'],
           since: null,
         );
+        final thread = await client.fetchThread(
+          provider: IssueTrackerProvider.gitea,
+          trackerProject: 'owner/sample',
+          issue: issues.single,
+        );
+        final login = await client.getAuthenticatedLogin(
+          provider: IssueTrackerProvider.gitea,
+        );
+        final posted = await client.createIssueComment(
+          provider: IssueTrackerProvider.gitea,
+          trackerProject: 'owner/sample',
+          issueNumber: 12,
+          body: 'Reply from gitea api',
+        );
 
-        // Then it throws a format error that includes the repo and API error details.
-        await expectLater(
-          future,
-          throwsA(
-            isA<FormatException>().having(
-              (error) => error.message,
-              'message',
-              allOf(
-                contains('owner/sample'),
-                contains('GetUserByName'),
-                contains('user redirect does not exist'),
+        // Then the Gitea issue payload is normalized into the shared issue summary model.
+        expect(login, 'gitea-user');
+        expect(issues.single.trackerProject, 'owner/sample');
+        expect(issues.single.number, 12);
+        expect(issues.single.state, 'open');
+        expect(issues.single.labels, ['enhancement']);
+        expect(thread.comments.single.url, contains('#issuecomment-501'));
+
+        // And the posted comment response is returned to the caller.
+        expect(postedBody, 'Reply from gitea api');
+        expect(posted.id, 901);
+        expect(posted.url, contains('#issuecomment-901'));
+        expect(posted.body, 'posted');
+      } finally {
+        await server.close(force: true);
+      }
+    });
+
+    /// ```gherkin
+    /// Scenario: Reuse a tea login from the Windows app data config path
+    ///   Given a tea config file under LOCALAPPDATA with a default Gitea login
+    ///   When the tracker client resolves the authenticated Gitea login
+    ///   Then it calls the Gitea HTTP API using the host and token from that config file
+    /// ```
+    test('Reuse a tea login from the Windows app data config path', () async {
+      // Given a tea config file under LOCALAPPDATA with a default Gitea login.
+      final sandbox = await Directory.systemTemp.createTemp('cws-tea-config-');
+      final localAppData = Directory(p.join(sandbox.path, 'AppData', 'Local'));
+      final teaConfigDir = Directory(p.join(localAppData.path, 'tea'));
+      await teaConfigDir.create(recursive: true);
+
+      late final HttpServer server;
+      server = await _startGiteaApiServer((request) async {
+        expect(request.uri.path, '/api/v1/user');
+        expect(
+          request.headers.value(HttpHeaders.authorizationHeader),
+          'token config-token',
+        );
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(jsonEncode(<String, Object?>{'login': 'config-user'}));
+        await request.response.close();
+      });
+
+      await File(p.join(teaConfigDir.path, 'config.yml')).writeAsString('''
+logins:
+  - name: company
+    url: http://${server.address.host}:${server.port}
+    token: config-token
+    default: true
+    insecure: true
+''');
+      AppEnvironment.resetForTest(<String, String>{
+        'LOCALAPPDATA': localAppData.path,
+      });
+      final client = IssueTrackerClient();
+
+      try {
+        // When the tracker client resolves the authenticated Gitea login.
+        final login = await client.getAuthenticatedLogin(
+          provider: IssueTrackerProvider.gitea,
+        );
+
+        // Then it calls the Gitea HTTP API using the host and token from that config file.
+        expect(login, 'config-user');
+      } finally {
+        await server.close(force: true);
+        await sandbox.delete(recursive: true);
+      }
+    });
+
+    /// ```gherkin
+    /// Scenario: Surface Gitea API error details when issue listing returns an error response
+    ///   Given a local Gitea API server whose issue list request returns a Gitea error object
+    ///   When the tracker client fetches updated Gitea issues
+    ///   Then it throws a format error that includes the repo and API error details
+    /// ```
+    test(
+      'Surface Gitea API error details when issue listing returns an error response',
+      () async {
+        // Given a local Gitea API server whose issue list request returns a Gitea error object.
+        final server = await _startGiteaApiServer((request) async {
+          request.response
+            ..statusCode = HttpStatus.notFound
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<String, Object?>{
+                'errors': <String>[
+                  'user redirect does not exist [name: owner]',
+                ],
+                'message': 'GetUserByName',
+                'url': 'https://gitea.example.test/api/swagger',
+              }),
+            );
+          await request.response.close();
+        });
+        _configureGiteaTestEnvironment(server);
+        final client = IssueTrackerClient();
+
+        try {
+          // When the tracker client fetches updated Gitea issues.
+          final future = client.fetchUpdatedIssuesForRepos(
+            provider: IssueTrackerProvider.gitea,
+            trackerProjects: const <String>['owner/sample'],
+            since: null,
+          );
+
+          // Then it throws a format error that includes the repo and API error details.
+          await expectLater(
+            future,
+            throwsA(
+              isA<FormatException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('GetUserByName'),
+                  contains('user redirect does not exist'),
+                  contains('404'),
+                ),
               ),
+            ),
+          );
+        } finally {
+          await server.close(force: true);
+        }
+      },
+    );
+
+    /// ```gherkin
+    /// Scenario: Fail fast and log when a Gitea API request exceeds the timeout
+    ///   Given a local Gitea API server whose issue list request never returns promptly
+    ///   When the tracker client fetches updated Gitea issues with a short timeout
+    ///   Then it throws a timeout instead of waiting indefinitely
+    ///   And the tracker logger records the timed out request
+    /// ```
+    test(
+      'Fail fast and log when a Gitea API request exceeds the timeout',
+      () async {
+        // Given a local Gitea API server whose issue list request never returns promptly.
+        final server = await _startGiteaApiServer((request) async {
+          await Future<void>.delayed(const Duration(seconds: 5));
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write('[]');
+          await request.response.close();
+        });
+        _configureGiteaTestEnvironment(server);
+        final logMessages = <String>[];
+        void listener(AppLogRecord record) {
+          if (record.loggerName == 'code_work_spawner.issue_tracker') {
+            logMessages.add(record.message);
+          }
+        }
+
+        AppLogger.addListener(listener);
+        final client = IssueTrackerClient(
+          commandTimeout: const Duration(milliseconds: 200),
+        );
+
+        try {
+          // When the tracker client fetches updated Gitea issues with a short timeout.
+          final future = client.fetchUpdatedIssuesForRepos(
+            provider: IssueTrackerProvider.gitea,
+            trackerProjects: const <String>['owner/sample'],
+            since: null,
+          );
+
+          // Then it throws a timeout instead of waiting indefinitely.
+          await expectLater(
+            future,
+            throwsA(
+              isA<TimeoutException>().having(
+                (error) => error.duration,
+                'duration',
+                const Duration(milliseconds: 200),
+              ),
+            ),
+          );
+        } finally {
+          AppLogger.removeListener(listener);
+          await server.close(force: true);
+        }
+
+        // And the tracker logger records the timed out request.
+        expect(
+          logMessages,
+          contains(
+            allOf(
+              contains('gitea request timeout'),
+              contains('timeout_ms=200'),
+              contains('/api/v1/repos/owner/sample/issues'),
             ),
           ),
         );
       },
     );
   });
+}
+
+void _configureGiteaTestEnvironment(HttpServer server) {
+  _configureGiteaTestEnvironmentFromBaseUrl(
+    'http://${server.address.host}:${server.port}',
+  );
+}
+
+void _configureGiteaTestEnvironmentFromBaseUrl(String baseUrl) {
+  AppEnvironment.resetForTest(<String, String>{
+    ...Platform.environment,
+    'CWS_GITEA_HOST': baseUrl,
+    'CWS_GITEA_TOKEN': 'test-token',
+    'CWS_GITEA_INSECURE': 'false',
+  });
+}
+
+Future<HttpServer> _startGiteaApiServer(
+  Future<void> Function(HttpRequest request) handler,
+) async {
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  unawaited(() async {
+    await for (final request in server) {
+      await handler(request);
+    }
+  }());
+  return server;
 }

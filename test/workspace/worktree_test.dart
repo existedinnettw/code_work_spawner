@@ -76,15 +76,16 @@ void registerIssueAssistantAppRunOnceWorktreeTests() {
         final responderScript = File(
           p.join(sandbox.path, 'responder-capture.sh'),
         );
-        await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-pwd > "${bashScriptPath(cwdCapture.path)}"
-cat > "${bashScriptPath(stdinCapture.path)}"
-cat <<'JSON'
-{"decision":"no_reply","mode":"planning","summary":"captured mention context"}
-JSON
-''');
-        await makeScriptExecutable(responderScript);
+        await writeCapturingResponderScript(
+          responderScript,
+          {
+            'decision': 'no_reply',
+            'mode': 'planning',
+            'summary': 'captured mention context',
+          },
+          cwdCapture: cwdCapture,
+          stdinCapture: stdinCapture,
+        );
 
         // And an orchestrator-style config pointing to the fake repo and responder.
         final configFile = File(
@@ -110,6 +111,8 @@ projects:
           config: await AppConfig.load(configFile.path),
           databasePath: p.join(sandbox.path, 'state.sqlite3'),
           ghCommand: ghScript.path,
+          responderRunner: fakeResponderRunner(),
+          commandExecutor: fakeExternalCommandExecutor(),
         );
 
         // When the app processes one polling cycle.
@@ -117,7 +120,7 @@ projects:
         await app.close();
 
         // Then the responder runs from an ephemeral worktree instead of the source checkout.
-        final capturedCwd = hostPathFromScript(await cwdCapture.readAsString());
+        final capturedCwd = await cwdCapture.readAsString();
         expect(
           p.normalize(capturedCwd.trim()),
           isNot(p.normalize(repoDir.path)),
@@ -201,15 +204,12 @@ projects:
       final responderScript = File(
         p.join(sandbox.path, 'planning-responder.sh'),
       );
-      await responderScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-pwd > "${bashScriptPath(cwdCapture.path)}"
-cat >/dev/null
-cat <<'JSON'
-{"decision":"reply","mode":"planning","markdown":"planning reply","summary":"used project path"}
-JSON
-''');
-      await makeScriptExecutable(responderScript);
+      await writeCapturingResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'planning reply',
+        'summary': 'used project path',
+      }, cwdCapture: cwdCapture);
 
       // And an orchestrator-style config pointing to the fake repo and responder.
       final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
@@ -234,6 +234,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the app processes one polling cycle.
@@ -241,7 +243,7 @@ projects:
       await app.close();
 
       // Then the responder runs from an ephemeral worktree instead of the source checkout.
-      final capturedCwd = hostPathFromScript(await cwdCapture.readAsString());
+      final capturedCwd = await cwdCapture.readAsString();
       expect(p.normalize(capturedCwd.trim()), isNot(p.normalize(repoDir.path)));
       expect(
         p.isWithin(worktreeRoot.path, p.normalize(capturedCwd.trim())),
@@ -331,6 +333,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the app processes one polling cycle.

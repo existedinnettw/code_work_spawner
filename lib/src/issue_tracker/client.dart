@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:github/github.dart';
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 import '../config/app_environment.dart';
+import '../config/app_logger.dart';
 import '../config/config_schema.dart';
 import '../core/process_launcher.dart';
 import 'models.dart';
@@ -15,12 +18,21 @@ class IssueTrackerClient {
     this.glabCommand = 'glab',
     this.teaCommand = 'tea',
     this.opCommand = 'op',
-  });
+    Duration? commandTimeout,
+    AppLogger? logger,
+    ExternalCommandExecutor? commandExecutor,
+  }) : commandTimeout = commandTimeout ?? const Duration(seconds: 15),
+       _logger = logger ?? AppLogger('code_work_spawner.issue_tracker'),
+       _commandExecutor =
+           commandExecutor ?? const DefaultExternalCommandExecutor();
 
   final String ghCommand;
   final String glabCommand;
   final String teaCommand;
   final String opCommand;
+  final Duration commandTimeout;
+  final AppLogger _logger;
+  final ExternalCommandExecutor _commandExecutor;
   final Map<IssueTrackerProvider, Future<String?>> _authenticatedLoginFutures =
       <IssueTrackerProvider, Future<String?>>{};
   final Map<String, Future<_OpenProjectProjectRef>> _openProjectProjectFutures =
@@ -81,18 +93,14 @@ class IssueTrackerClient {
           {'per_page': '100'},
         ),
       ]),
-      IssueTrackerProvider.gitea => await _runTeaJson([
-        'api',
-        '-X',
-        'GET',
-        _buildApiPath(
+      IssueTrackerProvider.gitea => await _runGiteaJson(
+        method: 'GET',
+        path: _buildApiPath(
           issue.requiredRepoSlug,
           ['issues', '${issue.number}', 'comments'],
           {'limit': '100'},
         ),
-        '-r',
-        issue.requiredRepoSlug.fullName,
-      ]),
+      ),
       IssueTrackerProvider.openproject => await _runOpenProjectJson(
         method: 'GET',
         path: '/api/v3/work_packages/${issue.number}/activities',
@@ -157,20 +165,15 @@ class IssueTrackerClient {
         '-f',
         'body=$body',
       ]),
-      IssueTrackerProvider.gitea => await _runTeaJson([
-        'api',
-        '-X',
-        'POST',
-        _buildApiPath(parseRepositorySlug(trackerProject), [
+      IssueTrackerProvider.gitea => await _runGiteaJson(
+        method: 'POST',
+        path: _buildApiPath(parseRepositorySlug(trackerProject), [
           'issues',
           '$issueNumber',
           'comments',
         ]),
-        '-f',
-        'body=$body',
-        '-r',
-        trackerProject,
-      ]),
+        body: <String, Object?>{'body': body},
+      ),
       IssueTrackerProvider.openproject => await _runOpenProjectJson(
         method: 'POST',
         path: '/api/v3/work_packages/$issueNumber/activities',
@@ -241,7 +244,7 @@ class IssueTrackerClient {
     return switch (provider) {
       IssueTrackerProvider.github => 'gh',
       IssueTrackerProvider.gitlab => 'glab',
-      IssueTrackerProvider.gitea => 'tea',
+      IssueTrackerProvider.gitea => 'gitea',
       IssueTrackerProvider.openproject => opCommand,
     };
   }
@@ -250,43 +253,23 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required String url,
   }) async {
-    final result = await _runCommand(teaCommand, [
-      'webhooks',
-      'create',
-      '--type',
-      'gitea',
-      '--events',
-      'issues,issue_comment',
-      '--active',
-      '-o',
-      'json',
-      '-r',
-      repo.fullName,
-      url,
-    ]);
-    final stdoutText = result.stdout.toString().trim();
-    if (stdoutText.isEmpty) {
-      throw FormatException(
-        'tea webhooks create returned an empty response for repo '
-        '${repo.fullName}.',
-      );
-    }
-
-    try {
-      final json = jsonDecode(stdoutText);
-      if (json is Map<String, dynamic>) {
-        return readIntField(json, 'id');
-      }
-    } on FormatException {
-      final webhookId = _extractWebhookIdFromTeaOutput(stdoutText);
-      if (webhookId != null) {
-        return webhookId;
-      }
+    final json = await _runGiteaJson(
+      method: 'POST',
+      path: _buildApiPath(repo, ['hooks']),
+      body: <String, Object?>{
+        'type': 'gitea',
+        'config': <String, Object?>{'url': url, 'content_type': 'json'},
+        'events': <String>['issues', 'issue_comment'],
+        'active': true,
+      },
+    );
+    if (json is Map<String, dynamic>) {
+      return readIntField(json, 'id');
     }
 
     throw FormatException(
-      'tea webhooks create returned an unexpected response for repo '
-      '${repo.fullName}. stdout=${_summarizeOutput(stdoutText)}',
+      'Gitea API webhook create returned an unexpected response for repo '
+      '${repo.fullName}.',
     );
   }
 
@@ -362,14 +345,10 @@ class IssueTrackerClient {
     required RepositorySlug repo,
     required int webhookId,
   }) async {
-    await _runTeaJson([
-      'webhooks',
-      'delete',
-      '--confirm',
-      '-r',
-      repo.fullName,
-      '$webhookId',
-    ]);
+    await _runGiteaJson(
+      method: 'DELETE',
+      path: _buildApiPath(repo, ['hooks', '$webhookId']),
+    );
   }
 
   Future<void> deleteGitLabWebhook({
@@ -404,6 +383,14 @@ class IssueTrackerClient {
 
     final issues = <GitHubIssueSummary>[];
     for (var page = 1; true; page += 1) {
+      _traceRequest(
+        provider: IssueTrackerProvider.github,
+        requestKind: 'search-issues',
+        trackerProject: repoList.map((repo) => repo.fullName).join(','),
+        page: page,
+        since: since,
+        requestPath: 'search/issues',
+      );
       final json = await _runGhJson([
         'api',
         '-X',
@@ -453,6 +440,14 @@ class IssueTrackerClient {
           'page': '$page',
           if (since != null) 'updated_after': since.toUtc().toIso8601String(),
         };
+        _traceRequest(
+          provider: IssueTrackerProvider.gitlab,
+          requestKind: 'list-issues',
+          trackerProject: trackerProject,
+          page: page,
+          since: since,
+          requestPath: _buildGitLabApiPath(trackerProject, ['issues'], query),
+        );
         final json = await _runGlabJson([
           'api',
           '-X',
@@ -490,23 +485,25 @@ class IssueTrackerClient {
           'page': '$page',
           if (since != null) 'since': since.toUtc().toIso8601String(),
         };
-        final json = await _runTeaJson([
-          'api',
-          '-X',
-          'GET',
-          _buildApiPath(repo, ['issues'], query),
-          '-r',
-          repo.fullName,
-        ]);
+        final requestPath = _buildApiPath(repo, ['issues'], query);
+        _traceRequest(
+          provider: IssueTrackerProvider.gitea,
+          requestKind: 'list-issues',
+          trackerProject: repo.fullName,
+          page: page,
+          since: since,
+          requestPath: requestPath,
+        );
+        final json = await _runGiteaJson(method: 'GET', path: requestPath);
         if (json is Map<String, dynamic>) {
           throw FormatException(
-            'tea api returned an error while listing Gitea issues for '
+            'Gitea API returned an error while listing issues for '
             '${repo.fullName}: ${_describeJsonObject(json)}',
           );
         }
         if (json != null && json is! List<dynamic>) {
           throw FormatException(
-            'tea api returned ${json.runtimeType} while listing Gitea issues '
+            'Gitea API returned ${json.runtimeType} while listing issues '
             'for ${repo.fullName}; expected a JSON array.',
           );
         }
@@ -579,7 +576,10 @@ class IssueTrackerClient {
     final json = switch (provider) {
       IssueTrackerProvider.github => await _runGhJson(['api', 'user']),
       IssueTrackerProvider.gitlab => await _runGlabJson(['api', 'user']),
-      IssueTrackerProvider.gitea => await _runTeaJson(['api', 'user']),
+      IssueTrackerProvider.gitea => await _runGiteaJson(
+        method: 'GET',
+        path: '/user',
+      ),
       IssueTrackerProvider.openproject => await _runOpenProjectJson(
         method: 'GET',
         path: '/api/v3/users/me',
@@ -604,8 +604,102 @@ class IssueTrackerClient {
     return _runJson(glabCommand, arguments);
   }
 
-  Future<Object?> _runTeaJson(List<String> arguments) {
-    return _runJson(teaCommand, arguments);
+  Future<Object?> _runGiteaJson({
+    required String method,
+    required String path,
+    Map<String, String>? queryParameters,
+    Object? body,
+  }) async {
+    final config = await _loadGiteaConfig();
+    final client = HttpClient();
+    if (config.insecure) {
+      client.badCertificateCallback = (_, _, _) => true;
+    }
+    final uri = _buildGiteaUri(
+      config.host,
+      path,
+      queryParameters: queryParameters,
+    );
+    final stopwatch = Stopwatch()..start();
+    _logger.debug(
+      'gitea request start timeout_ms=${commandTimeout.inMilliseconds} '
+      'method=$method uri=$uri',
+    );
+
+    try {
+      final result =
+          await (() async {
+            final request = await client.openUrl(method, uri);
+            request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+            request.headers.set(
+              HttpHeaders.authorizationHeader,
+              'token ${config.token}',
+            );
+            if (body != null) {
+              request.headers.set(
+                HttpHeaders.contentTypeHeader,
+                'application/json',
+              );
+              request.write(jsonEncode(body));
+            }
+            final response = await request.close();
+            final responseBody = await utf8.decodeStream(response);
+            return (response: response, body: responseBody);
+          })().timeout(
+            commandTimeout,
+            onTimeout: () {
+              throw TimeoutException(
+                'Gitea API request timed out after ${commandTimeout.inMilliseconds}ms.',
+                commandTimeout,
+              );
+            },
+          );
+
+      stopwatch.stop();
+      _logger.debug(
+        'gitea request finished duration_ms=${stopwatch.elapsedMilliseconds} '
+        'status_code=${result.response.statusCode} method=$method uri=$uri',
+      );
+      final trimmed = result.body.trim();
+      final parsedJson = trimmed.isEmpty ? null : jsonDecode(trimmed);
+      if (result.response.statusCode < 200 ||
+          result.response.statusCode >= 300) {
+        if (parsedJson is Map<String, dynamic>) {
+          throw FormatException(
+            'Gitea API request failed '
+            '(${result.response.statusCode} ${result.response.reasonPhrase}): '
+            '${_describeJsonObject(parsedJson)}',
+          );
+        }
+        throw HttpException(
+          'Gitea API request failed '
+          '(${result.response.statusCode} ${result.response.reasonPhrase}): '
+          '${_summarizeOutput(result.body)}',
+          uri: uri,
+        );
+      }
+      return parsedJson;
+    } on TimeoutException catch (error, stackTrace) {
+      stopwatch.stop();
+      _logger.error(
+        'gitea request timeout duration_ms=${stopwatch.elapsedMilliseconds} '
+        'timeout_ms=${commandTimeout.inMilliseconds} method=$method uri=$uri',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    } catch (error, stackTrace) {
+      stopwatch.stop();
+      _logger.error(
+        'gitea request failed duration_ms=${stopwatch.elapsedMilliseconds} '
+        'method=$method uri=$uri',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   Future<Object?> _runOpenProjectJson({
@@ -659,12 +753,31 @@ class IssueTrackerClient {
     final result = await _runCommand(command, arguments);
     final stdoutText = result.stdout.toString().trim();
     if (stdoutText.isEmpty) {
+      _traceCommandResult(
+        command: command,
+        arguments: arguments,
+        state: 'empty-stdout',
+      );
       return null;
     }
 
     try {
-      return jsonDecode(stdoutText);
+      final json = jsonDecode(stdoutText);
+      _traceCommandResult(
+        command: command,
+        arguments: arguments,
+        state: 'json-parsed',
+        detail: _describeJsonPayload(json),
+      );
+      return json;
     } on FormatException catch (error) {
+      _traceCommandResult(
+        command: command,
+        arguments: arguments,
+        state: 'json-parse-failed',
+        detail:
+            '${error.message} stdout=${_summarizeOutput(stdoutText, maxLength: 120)}',
+      );
       throw FormatException(
         'Failed to parse JSON from `$command ${arguments.join(' ')}`: '
         '${error.message}. stdout=${_summarizeOutput(stdoutText)}',
@@ -676,7 +789,41 @@ class IssueTrackerClient {
     String command,
     List<String> arguments,
   ) async {
-    final result = await runExternalCommand(command, arguments);
+    final renderedCommand = _renderCommand(command, arguments);
+    final stopwatch = Stopwatch()..start();
+    _logger.debug(
+      'command start timeout_ms=${commandTimeout.inMilliseconds} command=$renderedCommand',
+    );
+    late final ProcessResult result;
+    try {
+      result = await _commandExecutor.run(
+        command,
+        arguments,
+        timeout: commandTimeout,
+      );
+    } on TimeoutException catch (error, stackTrace) {
+      stopwatch.stop();
+      _logger.error(
+        'command timeout duration_ms=${stopwatch.elapsedMilliseconds} '
+        'timeout_ms=${commandTimeout.inMilliseconds} command=$renderedCommand',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    } catch (error, stackTrace) {
+      stopwatch.stop();
+      _logger.error(
+        'command failed duration_ms=${stopwatch.elapsedMilliseconds} command=$renderedCommand',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+    stopwatch.stop();
+    _logger.debug(
+      'command finished duration_ms=${stopwatch.elapsedMilliseconds} '
+      'exit_code=${result.exitCode} command=$renderedCommand',
+    );
     if (result.exitCode != 0) {
       throw ProcessException(
         command,
@@ -688,12 +835,19 @@ class IssueTrackerClient {
     return result;
   }
 
-  int? _extractWebhookIdFromTeaOutput(String stdoutText) {
-    final match = RegExp(
-      r'Webhook created successfully \(ID:\s*(\d+)\)',
-      caseSensitive: false,
-    ).firstMatch(stdoutText);
-    return match == null ? null : int.parse(match.group(1)!);
+  String _renderCommand(String command, List<String> arguments) {
+    final parts = <String>[command, ...arguments];
+    return parts.map(_shellQuote).join(' ');
+  }
+
+  String _shellQuote(String value) {
+    if (value.isEmpty) {
+      return '""';
+    }
+    if (!value.contains(RegExp(r'[\s"]'))) {
+      return value;
+    }
+    return '"${value.replaceAll('"', r'\"')}"';
   }
 
   String _describeJsonObject(Map<String, dynamic> json) {
@@ -720,6 +874,47 @@ class IssueTrackerClient {
       return singleLine;
     }
     return '${singleLine.substring(0, maxLength)}...';
+  }
+
+  String _describeJsonPayload(Object? json) {
+    return switch (json) {
+      List<dynamic> list => 'type=list length=${list.length}',
+      Map<String, dynamic> map =>
+        'type=object keys=${map.keys.take(6).join(",")}',
+      null => 'type=null',
+      _ => 'type=${json.runtimeType}',
+    };
+  }
+
+  void _traceRequest({
+    required IssueTrackerProvider provider,
+    required String requestKind,
+    required String trackerProject,
+    required int page,
+    required DateTime? since,
+    required String requestPath,
+  }) {
+    _logger.debug(
+      'trace request provider=${provider.name} kind=$requestKind '
+      'tracker_project=$trackerProject page=$page '
+      'since=${since?.toUtc().toIso8601String() ?? "(none)"} '
+      'path=$requestPath',
+    );
+  }
+
+  void _traceCommandResult({
+    required String command,
+    required List<String> arguments,
+    required String state,
+    String? detail,
+  }) {
+    final parts = <String>[
+      'trace command_result state=$state',
+      'command=$command',
+      'args=${arguments.map(_shellQuote).join(" ")}',
+      if (detail != null && detail.isNotEmpty) 'detail=$detail',
+    ];
+    _logger.debug(parts.join(' '));
   }
 
   String _buildApiPath(
@@ -759,6 +954,186 @@ class IssueTrackerClient {
           ? null
           : queryParameters,
     );
+  }
+
+  Uri _buildGiteaUri(
+    Uri host,
+    String path, {
+    Map<String, String>? queryParameters,
+  }) {
+    final relativeUri = Uri.parse(path);
+    final normalizedPath = relativeUri.path.startsWith('/')
+        ? relativeUri.path
+        : '/${relativeUri.path}';
+    final effectiveQueryParameters =
+        queryParameters ??
+        (relativeUri.hasQuery ? relativeUri.queryParameters : null);
+    return host.replace(
+      path: p.posix.normalize(
+        '${host.path.endsWith('/') ? host.path.substring(0, host.path.length - 1) : host.path}/api/v1$normalizedPath',
+      ),
+      queryParameters:
+          effectiveQueryParameters == null || effectiveQueryParameters.isEmpty
+          ? null
+          : effectiveQueryParameters,
+    );
+  }
+
+  Future<_GiteaConfig> _loadGiteaConfig() async {
+    final environment = AppEnvironment.variables;
+    final host =
+        environment['CWS_GITEA_HOST']?.trim() ??
+        environment['GITEA_HOST']?.trim();
+    final token =
+        environment['CWS_GITEA_TOKEN']?.trim() ??
+        environment['GITEA_TOKEN']?.trim();
+    final insecureValue =
+        environment['CWS_GITEA_INSECURE']?.trim() ??
+        environment['GITEA_INSECURE']?.trim();
+    if (host != null && host.isNotEmpty && token != null && token.isNotEmpty) {
+      return _GiteaConfig(
+        host: Uri.parse(host),
+        token: token,
+        insecure: _parseBooleanFlag(insecureValue),
+      );
+    }
+
+    final loginName =
+        environment['CWS_GITEA_LOGIN']?.trim() ??
+        environment['GITEA_LOGIN']?.trim() ??
+        environment['TEA_LOGIN']?.trim();
+    final configPath = _teaConfigPath(environment);
+    final file = File(configPath);
+    if (!await file.exists()) {
+      throw const FileSystemException(
+        'Gitea config not found. Set CWS_GITEA_HOST/CWS_GITEA_TOKEN or configure tea first.',
+      );
+    }
+
+    final document = loadYaml(await file.readAsString());
+    final logins =
+        (document is YamlMap ? document['logins'] : null) as YamlList?;
+    if (logins == null || logins.isEmpty) {
+      throw FileSystemException(
+        'No tea logins found in Gitea config at $configPath.',
+      );
+    }
+
+    final loginMaps = logins
+        .whereType<YamlMap>()
+        .map((entry) => Map<String, Object?>.from(entry))
+        .toList(growable: false);
+    final selectedLogin = _selectTeaLogin(loginMaps, loginName);
+    final loginHost = selectedLogin['url']?.toString().trim();
+    final loginToken = selectedLogin['token']?.toString().trim();
+    if (loginHost == null ||
+        loginHost.isEmpty ||
+        loginToken == null ||
+        loginToken.isEmpty) {
+      throw FileSystemException(
+        'Selected tea login in $configPath is missing url or token.',
+      );
+    }
+
+    return _GiteaConfig(
+      host: Uri.parse(loginHost),
+      token: loginToken,
+      insecure: _parseBooleanFlag(selectedLogin['insecure']?.toString()),
+    );
+  }
+
+  Map<String, Object?> _selectTeaLogin(
+    List<Map<String, Object?>> logins,
+    String? requestedLoginName,
+  ) {
+    if (requestedLoginName != null && requestedLoginName.isNotEmpty) {
+      final matchedLogin = logins
+          .where((login) {
+            final name = login['name']?.toString().trim();
+            return name != null &&
+                name.toLowerCase() == requestedLoginName.toLowerCase();
+          })
+          .toList(growable: false);
+      if (matchedLogin.length == 1) {
+        return matchedLogin.single;
+      }
+      throw FileSystemException(
+        'tea login "$requestedLoginName" was not found or was ambiguous.',
+      );
+    }
+
+    final defaultLogins = logins
+        .where((login) {
+          final value = login['default'];
+          return value == true || value?.toString().toLowerCase() == 'true';
+        })
+        .toList(growable: false);
+    if (defaultLogins.length == 1) {
+      return defaultLogins.single;
+    }
+    if (logins.length == 1) {
+      return logins.single;
+    }
+    throw const FileSystemException(
+      'Multiple tea logins found. Set CWS_GITEA_LOGIN, GITEA_LOGIN, or TEA_LOGIN to choose one.',
+    );
+  }
+
+  String _teaConfigPath(Map<String, String> environment) {
+    final explicitPath =
+        environment['CWS_GITEA_CONFIG_PATH']?.trim() ??
+        environment['TEA_CONFIG_PATH']?.trim();
+    if (explicitPath != null && explicitPath.isNotEmpty) {
+      return explicitPath;
+    }
+
+    final candidates = <String>[];
+    final localAppData = environment['LOCALAPPDATA']?.trim();
+    if (localAppData != null && localAppData.isNotEmpty) {
+      candidates.add(p.join(localAppData, 'tea', 'config.yml'));
+    }
+    final xdgConfigHome = environment['XDG_CONFIG_HOME']?.trim();
+    if (xdgConfigHome != null && xdgConfigHome.isNotEmpty) {
+      candidates.add(p.join(xdgConfigHome, 'tea', 'config.yml'));
+    }
+    final userProfile = environment['USERPROFILE']?.trim();
+    if (userProfile != null && userProfile.isNotEmpty) {
+      candidates.add(
+        p.join(userProfile, 'AppData', 'Local', 'tea', 'config.yml'),
+      );
+      candidates.add(p.join(userProfile, '.tea', 'tea.yml'));
+    }
+    final home = environment['HOME']?.trim();
+    if (home != null && home.isNotEmpty) {
+      candidates.add(p.join(home, '.config', 'tea', 'config.yml'));
+      candidates.add(p.join(home, '.tea', 'tea.yml'));
+    }
+    if (candidates.isEmpty) {
+      throw const FileSystemException(
+        'HOME is not set and LOCALAPPDATA/XDG_CONFIG_HOME/USERPROFILE are unset. Cannot locate tea config.',
+      );
+    }
+
+    for (final candidate in candidates) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    return candidates.first;
+  }
+
+  bool _parseBooleanFlag(String? value) {
+    if (value == null) {
+      return false;
+    }
+    switch (value.trim().toLowerCase()) {
+      case '1':
+      case 'true':
+      case 'yes':
+      case 'on':
+        return true;
+    }
+    return false;
   }
 
   Future<_OpenProjectConfig> _loadOpenProjectConfig() async {
@@ -862,6 +1237,18 @@ class _OpenProjectConfig {
 
   final Uri host;
   final String token;
+}
+
+class _GiteaConfig {
+  const _GiteaConfig({
+    required this.host,
+    required this.token,
+    required this.insecure,
+  });
+
+  final Uri host;
+  final String token;
+  final bool insecure;
 }
 
 class _OpenProjectProjectRef {

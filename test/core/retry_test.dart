@@ -84,6 +84,8 @@ projects:
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
       final logMessages = <String>[];
       void captureLog(AppLogRecord record) {

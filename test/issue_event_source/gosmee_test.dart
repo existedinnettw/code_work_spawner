@@ -21,12 +21,12 @@ void registerIssueAssistantAppRunGosmeeTests() {
     /// Scenario: Reply to a mention received through tea/gosmee
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And a gosmee script that forwards one Gitea issue_comment webhook event
-    ///   And a tea script that can manage webhooks and post issue comments
+    ///   And a Gitea API fixture that can manage webhooks and post issue comments
     ///   And a responder that emits a planning reply
     ///   And an orchestrator-style config that uses tea/gosmee
     ///   When the long-running app starts and receives the forwarded webhook
     ///   Then it reads issue comments and posts exactly one reply for that issue
-    ///   And the tea webhook lifecycle commands are invoked for the Gitea project
+    ///   And the Gitea webhook lifecycle API is invoked for the project
     /// ```
     test('Reply to a mention received through tea/gosmee', () async {
       // Given a temporary project checkout that can be used as the local repo path.
@@ -70,62 +70,26 @@ void registerIssueAssistantAppRunGosmeeTests() {
         gosmeeLog: gosmeeLog,
       );
 
-      // And a tea script that can manage webhooks and post issue comments.
-      final teaScript = File(p.join(sandbox.path, 'tea'));
-      final teaLog = File(p.join(sandbox.path, 'tea-log.jsonl'));
-      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
-      await teaScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-    printf '%s\n' "\$*" >> "${bashScriptPath(teaLog.path)}"
-
-if [[ "\$1" == "api" && "\$2" == "user" ]]; then
-  cat <<'JSON'
-${jsonEncode({'login': 'tea-octocat'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == repos/owner/sample/issues\\?state=open* ]]; then
-  cat <<'JSON'
-[]
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/12/comments?limit=100" ]]; then
-  cat <<'JSON'
-${jsonEncode(comments)}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/12/comments" ]]; then
-  for arg in "\$@"; do
-    if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
-    fi
-  done
-  cat <<'JSON'
-${jsonEncode({'id': 801, 'url': 'https://gitea.example.test/comment/801', 'body': 'posted'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "webhooks" && "\$2" == "create" ]]; then
-  cat <<'JSON'
-${jsonEncode({'id': 81})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "webhooks" && "\$2" == "delete" ]]; then
-  exit 0
-fi
-
-echo "unexpected tea args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(teaScript);
+      // And a Gitea API fixture for issue reads and replies.
+      final giteaServer = await FakeGiteaApiServer.start(
+        issueListResponsesByRepo: {
+          'owner/sample': const <Map<String, Object?>>[],
+        },
+        commentResponsesByRepo: {
+          'owner/sample': {12: comments},
+        },
+        postCommentResponsesByRepo: {
+          'owner/sample': {
+            12: {
+              'id': 801,
+              'body': 'posted',
+              'html_url': 'https://gitea.example.test/comment/801',
+            },
+          },
+        },
+        viewerLogin: 'tea-octocat',
+      );
+      addTearDown(giteaServer.close);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
@@ -157,17 +121,22 @@ projects:
     repo: owner/sample
     path: ${repoDir.path}
 ''');
+      await File(p.join(sandbox.path, '.env')).writeAsString('''
+CWS_GITEA_HOST=${giteaServer.baseUrl}
+CWS_GITEA_TOKEN=test-token
+''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         gosmeeCommand: gosmeeScript.path,
-        teaCommand: teaScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and receives the forwarded webhook.
       final runFuture = app.run();
       for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
+        if (giteaServer.postedBodies.isNotEmpty) {
           break;
         }
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -176,38 +145,31 @@ projects:
       await runFuture;
 
       // Then it reads issue comments and posts exactly one reply for that issue.
-      expect(await postedBody.exists(), isTrue);
-      final postedComment = await postedBody.readAsString();
+      expect(giteaServer.postedBodies, hasLength(1));
+      final postedComment =
+          (jsonDecode(giteaServer.postedBodies.single)
+                  as Map<String, dynamic>)['body']
+              as String;
       expect(
         postedComment,
         contains('Plan:\n- consume gosmee issue_comment events'),
       );
       expect(postedComment, contains('@tea-octocat'));
 
-      // And the tea webhook lifecycle commands are invoked for the Gitea project.
-      final teaLogLines = await teaLog.readAsLines();
+      // And the Gitea webhook lifecycle API is invoked for the project.
+      expect(giteaServer.createdWebhooks, hasLength(1));
       expect(
-        teaLogLines.any(
-          (line) => line.contains(
-            'webhooks create --type gitea --events issues,issue_comment --active -o json -r owner/sample https://gosmee.example.test/sample',
-          ),
-        ),
-        isTrue,
+        (giteaServer.createdWebhooks.single['config'] as Map)['url'],
+        'https://gosmee.example.test/sample',
       );
-      expect(
-        teaLogLines.any(
-          (line) =>
-              line.contains('webhooks delete --confirm -r owner/sample 81'),
-        ),
-        isTrue,
-      );
+      expect(giteaServer.deletedWebhookIds, contains(81));
     });
 
     /// ```gherkin
     /// Scenario: Reconcile a missed Gitea gosmee event through polling
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And a gosmee script that starts forwarding without delivering an event
-    ///   And a tea script that returns a new issue only on a later reconciliation poll
+    ///   And a Gitea API fixture that returns a new issue only on a later reconciliation poll
     ///   And a responder that emits a planning reply
     ///   And an orchestrator-style config that uses tea/gosmee with continuous reconciliation
     ///   When the long-running app starts and enough time passes for reconciliation polling
@@ -225,31 +187,12 @@ projects:
       // And a gosmee script that starts forwarding without delivering an event.
       final gosmeeScript = File(p.join(sandbox.path, 'gosmee'));
       final gosmeeLog = File(p.join(sandbox.path, 'gosmee-log.jsonl'));
-      await gosmeeScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-    printf '%s\n' "\$*" >> "${bashScriptPath(gosmeeLog.path)}"
+      registerFakeGosmeeCommand(
+        command: gosmeeScript.path,
+        publicUrl: 'https://gosmee.example.test/reconcile',
+        gosmeeLog: gosmeeLog,
+      );
 
-if [[ "\$1" == "--output" && "\$2" == "json" && "\$3" == "client" && "\$4" == "--new-url" ]]; then
-  printf '%s\n' 'https://gosmee.example.test/reconcile'
-  exit 0
-fi
-
-if [[ "\$1" == "client" ]]; then
-  while true; do
-    sleep 60
-  done
-fi
-
-echo "unexpected gosmee args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(gosmeeScript);
-
-      // And a tea script that returns a new issue only on a later reconciliation poll.
-      final teaScript = File(p.join(sandbox.path, 'tea'));
-      final teaLog = File(p.join(sandbox.path, 'tea-log.jsonl'));
-      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
-      final issueListCount = File(p.join(sandbox.path, 'issue-list-count'));
       final issue = {
         'index': 18,
         'title': 'Need reconciliation after a missed webhook',
@@ -271,70 +214,30 @@ exit 1
           'poster': {'login': 'reporter'},
         },
       ];
-      await teaScript.writeAsString('''#!/usr/bin/env bash
-set -euo pipefail
-    printf '%s\n' "\$*" >> "${bashScriptPath(teaLog.path)}"
 
-if [[ "\$1" == "api" && "\$2" == "user" ]]; then
-  cat <<'JSON'
-${jsonEncode({'login': 'tea-octocat'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == repos/owner/sample/issues\\?state=open* ]]; then
-  count=0
-  if [[ -f "${bashScriptPath(issueListCount.path)}" ]]; then
-    count="\$(cat "${bashScriptPath(issueListCount.path)}")"
-  fi
-  count=\$((count + 1))
-  printf '%s' "\$count" > "${bashScriptPath(issueListCount.path)}"
-  if [[ "\$count" -eq 1 ]]; then
-    cat <<'JSON'
-[]
-JSON
-  else
-    cat <<'JSON'
-${jsonEncode([issue])}
-JSON
-  fi
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments?limit=100" ]]; then
-  cat <<'JSON'
-${jsonEncode(comments)}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "api" && "\$4" == "repos/owner/sample/issues/18/comments" ]]; then
-  for arg in "\$@"; do
-    if [[ "\$arg" == body=* ]]; then
-      printf '%s' "\${arg#body=}" > "${bashScriptPath(postedBody.path)}"
-    fi
-  done
-  cat <<'JSON'
-${jsonEncode({'id': 802, 'url': 'https://gitea.example.test/comment/802', 'body': 'posted'})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "webhooks" && "\$2" == "create" ]]; then
-  cat <<'JSON'
-${jsonEncode({'id': 82})}
-JSON
-  exit 0
-fi
-
-if [[ "\$1" == "webhooks" && "\$2" == "delete" ]]; then
-  exit 0
-fi
-
-echo "unexpected tea args: \$*" >&2
-exit 1
-''');
-      await makeScriptExecutable(teaScript);
+      // And a Gitea API fixture that returns a new issue only on a later reconciliation poll.
+      final giteaServer = await FakeGiteaApiServer.start(
+        issueListResponseSequenceByRepo: {
+          'owner/sample': [
+            const <Map<String, Object?>>[],
+            [issue],
+          ],
+        },
+        commentResponsesByRepo: {
+          'owner/sample': {18: comments},
+        },
+        postCommentResponsesByRepo: {
+          'owner/sample': {
+            18: {
+              'id': 802,
+              'body': 'posted',
+              'html_url': 'https://gitea.example.test/comment/802',
+            },
+          },
+        },
+        viewerLogin: 'tea-octocat',
+      );
+      addTearDown(giteaServer.close);
 
       // And a responder that emits a planning reply.
       final responderScript = File(p.join(sandbox.path, 'responder.sh'));
@@ -367,17 +270,22 @@ projects:
     repo: owner/sample
     path: ${repoDir.path}
 ''');
+      await File(p.join(sandbox.path, '.env')).writeAsString('''
+CWS_GITEA_HOST=${giteaServer.baseUrl}
+CWS_GITEA_TOKEN=test-token
+''');
       final app = await IssueAssistantApp.open(
         config: await AppConfig.load(configFile.path),
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         gosmeeCommand: gosmeeScript.path,
-        teaCommand: teaScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and enough time passes for reconciliation polling.
       final runFuture = app.run();
       for (var attempt = 0; attempt < 200; attempt += 1) {
-        if (await postedBody.exists()) {
+        if (giteaServer.postedBodies.isNotEmpty) {
           break;
         }
         await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -386,21 +294,19 @@ projects:
       await runFuture;
 
       // Then it posts exactly one reply for the issue discovered by polling.
-      expect(await postedBody.exists(), isTrue);
-      final postedComment = await postedBody.readAsString();
+      expect(giteaServer.postedBodies, hasLength(1));
+      final postedComment =
+          (jsonDecode(giteaServer.postedBodies.single)
+                  as Map<String, dynamic>)['body']
+              as String;
       expect(
         postedComment,
         contains('Plan:\n- reconcile missed gosmee events through polling'),
       );
 
       // And the app performs more than one Gitea issue listing request while running.
-      final teaLogLines = await teaLog.readAsLines();
       expect(
-        teaLogLines
-            .where(
-              (line) => line.contains('repos/owner/sample/issues?state=open'),
-            )
-            .length,
+        giteaServer.issueListRequestCount('owner/sample'),
         greaterThanOrEqualTo(2),
       );
       final gosmeeLogLines = await gosmeeLog.readAsLines();

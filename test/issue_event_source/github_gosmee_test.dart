@@ -120,6 +120,8 @@ projects:
         databasePath: p.join(sandbox.path, 'state.sqlite3'),
         ghCommand: ghScript.path,
         gosmeeCommand: gosmeeScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
       );
 
       // When the long-running app starts and receives the forwarded webhook.

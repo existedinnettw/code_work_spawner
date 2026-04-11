@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -18,15 +19,15 @@ Future<void> writeFakeGhScript({
   String? viewerLogin,
   bool failViewerLookup = false,
 }) async {
-  final normalizedIssueListResponsesByRepo =
+  final issueLists =
       issueListResponsesByRepo ??
       <String, List<Map<String, Object?>>>{'owner/sample': issueListResponse};
-  final normalizedCommentResponsesByRepo =
+  final comments =
       commentResponsesByRepo ??
       <String, Map<int, List<Map<String, Object?>>>>{
         'owner/sample': commentResponses,
       };
-  final normalizedPostCommentIssueNumbersByRepo =
+  final postIssueNumbers =
       postCommentIssueNumbersByRepo ??
       <String, Set<int>>{
         'owner/sample': {
@@ -35,7 +36,7 @@ Future<void> writeFakeGhScript({
         },
       };
   final searchItems =
-      normalizedIssueListResponsesByRepo.entries
+      issueLists.entries
           .expand(
             (entry) => entry.value.map(
               (issue) => <String, Object?>{
@@ -53,168 +54,28 @@ Future<void> writeFakeGhScript({
   final openSearchItems = searchItems
       .where((item) => item['state'] == 'open')
       .toList(growable: false);
-  final allSearchResponse = jsonEncode({
-    'total_count': searchItems.length,
-    'incomplete_results': false,
-    'items': searchItems,
-  });
-  final openSearchResponse = jsonEncode({
-    'total_count': openSearchItems.length,
-    'incomplete_results': false,
-    'items': openSearchItems,
-  });
 
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (ghLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(ghLog.path)}"',
-    );
-  }
-
-  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
-  if (failViewerLookup) {
-    buffer
-      ..writeln(r'''  echo "viewer lookup failed" >&2''')
-      ..writeln('  exit 1')
-      ..writeln('fi');
-  } else {
-    buffer
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  buffer
-    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
-    ..writeln(r'''  query=""''')
-    ..writeln(r'''  for arg in "$@"; do''')
-    ..writeln(r'''    if [[ "$arg" == q=* ]]; then''')
-    ..writeln(r'''      query="${arg#q=}"''')
-    ..writeln(r'''    fi''')
-    ..writeln(r'''  done''')
-    ..writeln(r'''  if [[ "$query" == *"state:open"* ]]; then''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(openSearchResponse)
-    ..writeln('JSON')
-    ..writeln(r'''  else''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(allSearchResponse)
-    ..writeln('JSON')
-    ..writeln(r'''  fi''')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  for (final entry in normalizedIssueListResponsesByRepo.entries) {
-    final repo = entry.key;
-    buffer
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == repos/$repo/issues\\?* ]]; then',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode(entry.value))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  for (final repoEntry in normalizedCommentResponsesByRepo.entries) {
-    final repo = repoEntry.key;
-    for (final entry in repoEntry.value.entries) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"repos/$repo/issues/${entry.key}/comments?per_page=100" ]]; then',
-        )
-        ..writeln("  cat <<'JSON'")
-        ..writeln(jsonEncode(entry.value))
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
-    }
-  }
-
-  for (final repoEntry in normalizedPostCommentIssueNumbersByRepo.entries) {
-    final repo = repoEntry.key;
-    for (final issueNumber in repoEntry.value) {
-      buffer
-        ..writeln(
-          'if [[ "\$1" == "api" && "\$4" == '
-          '"repos/$repo/issues/$issueNumber/comments" ]]; then',
-        )
-        ..writeln(r'''  for arg in "$@"; do''')
-        ..writeln(r'''    :''');
-      if (postedBodyFile != null) {
-        buffer
-          ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
-          ..writeln(
-            r'''      printf '%s' "${arg#body=}" > '''
-            '"${bashScriptPath(postedBodyFile.path)}"',
-          )
-          ..writeln(r'''    fi''');
-      }
-      buffer
-        ..writeln(r'''  done''')
-        ..writeln("  cat <<'JSON'")
-        ..writeln(
-          jsonEncode({
-            'id': 700,
-            'html_url': 'https://example.test/comment/700',
-            'body': 'posted',
-          }),
-        )
-        ..writeln('JSON')
-        ..writeln('  exit 0')
-        ..writeln('fi');
-    }
-  }
-
-  for (final repoEntry in normalizedCommentResponsesByRepo.entries) {
-    final repo = repoEntry.key;
-    for (final issueEntry in repoEntry.value.entries) {
-      for (final comment in issueEntry.value) {
-        final commentId = comment['id'];
-        if (commentId is! int) {
-          continue;
-        }
-        buffer
-          ..writeln(
-            'if [[ "\$1" == "api" && "\$4" == '
-            '"repos/$repo/issues/comments/$commentId/reactions" ]]; then',
-          )
-          ..writeln(r'''  for arg in "$@"; do''')
-          ..writeln(r'''    :''');
-        if (reactionBodyFile != null) {
-          buffer
-            ..writeln(r'''    if [[ "$arg" == content=* ]]; then''')
-            ..writeln(
-              r'''      printf '%s' "${arg#content=}" > '''
-              '"${bashScriptPath(reactionBodyFile.path)}"',
-            )
-            ..writeln(r'''    fi''');
-        }
-        buffer
-          ..writeln(r'''  done''')
-          ..writeln("  cat <<'JSON'")
-          ..writeln(jsonEncode({'id': 990, 'content': 'eyes'}))
-          ..writeln('JSON')
-          ..writeln('  exit 0')
-          ..writeln('fi');
-      }
-    }
-  }
-
-  buffer
-    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await ghScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(ghScript);
+  _registerFakeGhCommand(
+    command: ghScript.path,
+    ghLog: ghLog,
+    failViewerLookup: failViewerLookup,
+    viewerLogin: viewerLogin,
+    searchResponse: {
+      'total_count': searchItems.length,
+      'incomplete_results': false,
+      'items': searchItems,
+    },
+    openSearchResponse: {
+      'total_count': openSearchItems.length,
+      'incomplete_results': false,
+      'items': openSearchItems,
+    },
+    issueLists: issueLists,
+    comments: comments,
+    postIssueNumbers: postIssueNumbers,
+    postedBodyFile: postedBodyFile,
+    reactionBodyFile: reactionBodyFile,
+  );
 }
 
 Future<void> writeFlakySearchGhScript({
@@ -232,68 +93,20 @@ Future<void> writeFlakySearchGhScript({
         },
       )
       .toList(growable: false);
-  final searchResponse = jsonEncode({
-    'total_count': searchItems.length,
-    'incomplete_results': false,
-    'items': searchItems,
-  });
 
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (ghLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(ghLog.path)}"',
-    );
-  }
-
-  buffer
-    ..writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode({'login': 'test-user'}))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
-    ..writeln(
-      '  if [[ ! -f "${bashScriptPath(failureStateFile.path)}" ]]; then',
-    )
-    ..writeln('    touch "${bashScriptPath(failureStateFile.path)}"')
-    ..writeln(r'''    echo "error connecting to api.github.com" >&2''')
-    ..writeln(
-      r'''    echo "check your internet connection or https://githubstatus.com" >&2''',
-    )
-    ..writeln('    exit 1')
-    ..writeln(r'''  fi''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(searchResponse)
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  for (final entry in commentResponses.entries) {
-    buffer
-      ..writeln(
-        'if [[ "\$1" == "api" && "\$4" == '
-        '"repos/owner/sample/issues/${entry.key}/comments?per_page=100" ]]; then',
-      )
-      ..writeln("  cat <<'JSON'")
-      ..writeln(jsonEncode(entry.value))
-      ..writeln('JSON')
-      ..writeln('  exit 0')
-      ..writeln('fi');
-  }
-
-  buffer
-    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await ghScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(ghScript);
+  _registerFakeGhCommand(
+    command: ghScript.path,
+    ghLog: ghLog,
+    searchResponse: {
+      'total_count': searchItems.length,
+      'incomplete_results': false,
+      'items': searchItems,
+    },
+    flakySearchStateFile: failureStateFile,
+    issueLists: const {},
+    comments: {'owner/sample': commentResponses},
+    postIssueNumbers: const {},
+  );
 }
 
 Future<void> writeWebhookForwardGhScript({
@@ -307,12 +120,6 @@ Future<void> writeWebhookForwardGhScript({
   String? viewerLogin,
 }) async {
   final issueNumber = issue['number'] as int;
-  final payload = {
-    'action': 'created',
-    'issue': issue,
-    'comment': comments.last,
-    'repository': {'full_name': repo},
-  };
   final searchItems = issueListResponse
       .map(
         (searchIssue) => <String, Object?>{
@@ -321,109 +128,31 @@ Future<void> writeWebhookForwardGhScript({
         },
       )
       .toList(growable: false);
-  final searchResponse = jsonEncode({
-    'total_count': searchItems.length,
-    'incomplete_results': false,
-    'items': searchItems,
-  });
 
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
-
-  if (ghLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(ghLog.path)}"',
-    );
-  }
-
-  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
-  buffer
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(searchResponse)
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(
-      'if [[ "\$1" == "api" && "\$4" == '
-      '"repos/$repo/issues/$issueNumber/comments?per_page=100" ]]; then',
-    )
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode(comments))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(
-      'if [[ "\$1" == "api" && "\$4" == '
-      '"repos/$repo/issues/$issueNumber/comments" ]]; then',
-    )
-    ..writeln(r'''  for arg in "$@"; do''')
-    ..writeln(r'''    :''');
-  if (postedBodyFile != null) {
-    buffer
-      ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
-      ..writeln(
-        r'''      printf '%s' "${arg#body=}" > '''
-        '"${bashScriptPath(postedBodyFile.path)}"',
-      )
-      ..writeln(r'''    fi''');
-  }
-  buffer
-    ..writeln(r'''  done''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(
-      jsonEncode({
-        'id': 702,
-        'html_url': 'https://example.test/comment/702',
-        'body': 'posted',
-      }),
-    )
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(r'''if [[ "$1" == "webhook" && "$2" == "forward" ]]; then''')
-    ..writeln(r'''  url=""''')
-    ..writeln(r'''  for arg in "$@"; do''')
-    ..writeln(r'''    if [[ "$arg" == --url=* ]]; then''')
-    ..writeln(r'''      url="${arg#--url=}"''')
-    ..writeln(r'''    fi''')
-    ..writeln(r'''  done''')
-    ..writeln(r'''  if [[ -z "$url" ]]; then''')
-    ..writeln(r'''    echo "missing --url" >&2''')
-    ..writeln('    exit 1')
-    ..writeln(r'''  fi''')
-    ..writeln(r'''  curl -sS -X POST \''')
-    ..writeln(r'''    -H "Content-Type: application/json" \''')
-    ..writeln(r'''    -H "X-GitHub-Event: issue_comment" \''')
-    ..writeln(r'''    --data-binary @- "$url" <<'JSON' >/dev/null''')
-    ..writeln(jsonEncode(payload))
-    ..writeln('JSON')
-    ..writeln(r'''  while true; do''')
-    ..writeln(r'''    sleep 60''')
-    ..writeln(r'''  done''')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await ghScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(ghScript);
+  _registerFakeGhCommand(
+    command: ghScript.path,
+    ghLog: ghLog,
+    viewerLogin: viewerLogin,
+    searchResponse: {
+      'total_count': searchItems.length,
+      'incomplete_results': false,
+      'items': searchItems,
+    },
+    issueLists: const {},
+    comments: {
+      repo: {issueNumber: comments},
+    },
+    postIssueNumbers: {
+      repo: {issueNumber},
+    },
+    postedBodyFile: postedBodyFile,
+    webhookPayload: {
+      'action': 'created',
+      'issue': issue,
+      'comment': comments.last,
+      'repository': {'full_name': repo},
+    },
+  );
 }
 
 Future<void> writeGitHubGosmeeGhScript({
@@ -445,114 +174,234 @@ Future<void> writeGitHubGosmeeGhScript({
         },
       )
       .toList(growable: false);
-  final searchResponse = jsonEncode({
-    'total_count': searchItems.length,
-    'incomplete_results': false,
-    'items': searchItems,
-  });
-  final buffer = StringBuffer()
-    ..writeln('#!/usr/bin/env bash')
-    ..writeln('set -euo pipefail');
 
-  if (ghLog != null) {
-    buffer.writeln(
-      r'''printf '%s\n' "$*" >> '''
-      '"${bashScriptPath(ghLog.path)}"',
+  _registerFakeGhCommand(
+    command: ghScript.path,
+    ghLog: ghLog,
+    viewerLogin: viewerLogin,
+    searchResponse: {
+      'total_count': searchItems.length,
+      'incomplete_results': false,
+      'items': searchItems,
+    },
+    issueLists: const {},
+    comments: {
+      repo: {issueNumber: comments},
+    },
+    postIssueNumbers: {
+      repo: {issueNumber},
+    },
+    postedBodyFile: postedBodyFile,
+    webhookIdsByRepo: {repo: webhookId},
+  );
+}
+
+void _registerFakeGhCommand({
+  required String command,
+  required Map<String, Object?> searchResponse,
+  required Map<String, List<Map<String, Object?>>> issueLists,
+  required Map<String, Map<int, List<Map<String, Object?>>>> comments,
+  required Map<String, Set<int>> postIssueNumbers,
+  File? ghLog,
+  bool failViewerLookup = false,
+  String? viewerLogin,
+  Map<String, Object?>? openSearchResponse,
+  File? postedBodyFile,
+  File? reactionBodyFile,
+  File? flakySearchStateFile,
+  Map<String, Object?>? webhookPayload,
+  Map<String, int>? webhookIdsByRepo,
+}) {
+  if (webhookPayload != null) {
+    fakeStartedCommandHandlers[command] = (arguments) async {
+      if (ghLog != null) {
+        await _appendLine(ghLog, '${arguments.join(' ')}\n');
+      }
+      final process = FakeStartedExternalCommand();
+      final targetUrl = _argumentValue(arguments, '--url=');
+      if (targetUrl != null) {
+        unawaited(_postGitHubWebhook(targetUrl, webhookPayload));
+      }
+      return process;
+    };
+  }
+
+  fakeCommandHandlers[command] = (arguments, {timeout}) async {
+    if (ghLog != null) {
+      await _appendLine(ghLog, '${arguments.join(' ')}\n');
+    }
+
+    ProcessResult result(
+      Object? stdout, {
+      int exitCode = 0,
+      String stderr = '',
+    }) {
+      final stdoutText = stdout is String ? stdout : jsonEncode(stdout);
+      return ProcessResult(0, exitCode, stdoutText, stderr);
+    }
+
+    if (_argsMatch(arguments, ['api', 'user'])) {
+      if (failViewerLookup) {
+        return result('', exitCode: 1, stderr: 'viewer lookup failed\n');
+      }
+      return result({'login': viewerLogin ?? 'test-user'});
+    }
+
+    if (_argsMatchAt(arguments, 0, 'api') &&
+        _argsMatchAt(arguments, 3, 'search/issues')) {
+      if (flakySearchStateFile != null &&
+          !await flakySearchStateFile.exists()) {
+        await flakySearchStateFile.writeAsString('failed-once');
+        return result(
+          '',
+          exitCode: 1,
+          stderr:
+              'error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com\n',
+        );
+      }
+      final query = arguments
+          .where((argument) => argument.startsWith('q='))
+          .map((argument) => argument.substring(2))
+          .firstOrNull;
+      return result(
+        query?.contains('state:open') ?? false
+            ? (openSearchResponse ?? searchResponse)
+            : searchResponse,
+      );
+    }
+
+    for (final entry in issueLists.entries) {
+      final path = 'repos/${entry.key}/issues?';
+      if (_argsMatchAt(arguments, 0, 'api') &&
+          arguments.length > 3 &&
+          arguments[3].startsWith(path)) {
+        return result(entry.value);
+      }
+    }
+
+    for (final repoEntry in comments.entries) {
+      for (final entry in repoEntry.value.entries) {
+        if (_argsMatchAt(arguments, 0, 'api') &&
+            _argsMatchAt(
+              arguments,
+              3,
+              'repos/${repoEntry.key}/issues/${entry.key}/comments?per_page=100',
+            )) {
+          return result(entry.value);
+        }
+      }
+    }
+
+    for (final repoEntry in postIssueNumbers.entries) {
+      for (final issueNumber in repoEntry.value) {
+        if (_argsMatchAt(arguments, 0, 'api') &&
+            _argsMatchAt(
+              arguments,
+              3,
+              'repos/${repoEntry.key}/issues/$issueNumber/comments',
+            )) {
+          final body = _argumentValue(arguments, 'body=');
+          if (postedBodyFile != null && body != null) {
+            await postedBodyFile.writeAsString(body);
+          }
+          return result({
+            'id': 700,
+            'html_url': 'https://example.test/comment/700',
+            'body': 'posted',
+          });
+        }
+      }
+    }
+
+    for (final repoEntry in comments.entries) {
+      for (final issueEntry in repoEntry.value.entries) {
+        for (final comment in issueEntry.value) {
+          final commentId = comment['id'];
+          if (commentId is int &&
+              _argsMatchAt(arguments, 0, 'api') &&
+              _argsMatchAt(
+                arguments,
+                3,
+                'repos/${repoEntry.key}/issues/comments/$commentId/reactions',
+              )) {
+            final content = _argumentValue(arguments, 'content=');
+            if (reactionBodyFile != null && content != null) {
+              await reactionBodyFile.writeAsString(content);
+            }
+            return result({'id': 990, 'content': 'eyes'});
+          }
+        }
+      }
+    }
+
+    for (final entry in (webhookIdsByRepo ?? const <String, int>{}).entries) {
+      final hooksPath = 'repos/${entry.key}/hooks';
+      if (_argsMatchAt(arguments, 0, 'api') &&
+          _argsMatchAt(arguments, 3, hooksPath)) {
+        return result({'id': entry.value});
+      }
+      if (_argsMatchAt(arguments, 0, 'api') &&
+          _argsMatchAt(arguments, 3, '$hooksPath/${entry.value}')) {
+        return result(null);
+      }
+    }
+
+    return result(
+      '',
+      exitCode: 1,
+      stderr: 'unexpected gh args: ${arguments.join(' ')}\n',
     );
+  };
+}
+
+Future<void> _postGitHubWebhook(
+  String targetUrl,
+  Map<String, Object?> webhookPayload,
+) async {
+  final client = HttpClient();
+  try {
+    final request = await client.postUrl(Uri.parse(targetUrl));
+    request.headers.contentType = ContentType.json;
+    request.headers.set('X-GitHub-Event', 'issue_comment');
+    request.write(jsonEncode(webhookPayload));
+    await request.close();
+  } finally {
+    client.close(force: true);
   }
+}
 
-  buffer.writeln(r'''if [[ "$1" == "api" && "$2" == "user" ]]; then''');
-  buffer
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode({'login': viewerLogin ?? 'test-user'}))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
+bool _argsMatch(List<String> arguments, List<String> expected) =>
+    arguments.length >= expected.length &&
+    Iterable.generate(
+      expected.length,
+    ).every((index) => arguments[index] == expected[index]);
 
-  buffer
-    ..writeln(r'''if [[ "$1" == "api" && "$4" == "search/issues" ]]; then''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(searchResponse)
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
+bool _argsMatchAt(List<String> arguments, int index, String expected) =>
+    arguments.length > index && arguments[index] == expected;
 
-  buffer
-    ..writeln(
-      'if [[ "\$1" == "api" && "\$4" == '
-      '"repos/$repo/issues/$issueNumber/comments?per_page=100" ]]; then',
-    )
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode(comments))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln('if [[ "\$1" == "api" && "\$4" == "repos/$repo/hooks" ]]; then')
-    ..writeln(r'''  active_flag=""''')
-    ..writeln(r'''  for ((i = 1; i <= $#; i += 1)); do''')
-    ..writeln(r'''    if [[ "${!i}" == "active=true" ]]; then''')
-    ..writeln(r'''      prev_index=$((i - 1))''')
-    ..writeln(r'''      active_flag="${!prev_index}"''')
-    ..writeln(r'''      break''')
-    ..writeln(r'''    fi''')
-    ..writeln(r'''  done''')
-    ..writeln(
-      r'''  if [[ "$active_flag" != "-F" && "$active_flag" != "--field" ]]; then''',
-    )
-    ..writeln(
-      r'''    echo "expected active=true to be sent with -F/--field, got: $*" >&2''',
-    )
-    ..writeln(r'''    exit 1''')
-    ..writeln(r'''  fi''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(jsonEncode({'id': webhookId}))
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(
-      'if [[ "\$1" == "api" && "\$4" == '
-      '"repos/$repo/issues/$issueNumber/comments" ]]; then',
-    )
-    ..writeln(r'''  for arg in "$@"; do''')
-    ..writeln(r'''    :''');
-  if (postedBodyFile != null) {
-    buffer
-      ..writeln(r'''    if [[ "$arg" == body=* ]]; then''')
-      ..writeln(
-        r'''      printf '%s' "${arg#body=}" > '''
-        '"${bashScriptPath(postedBodyFile.path)}"',
-      )
-      ..writeln(r'''    fi''');
+String? _argumentValue(List<String> arguments, String prefix) {
+  for (final argument in arguments) {
+    if (argument.startsWith(prefix)) {
+      return argument.substring(prefix.length);
+    }
   }
-  buffer
-    ..writeln(r'''  done''')
-    ..writeln("  cat <<'JSON'")
-    ..writeln(
-      jsonEncode({
-        'id': 703,
-        'html_url': 'https://example.test/comment/703',
-        'body': 'posted',
-      }),
-    )
-    ..writeln('JSON')
-    ..writeln('  exit 0')
-    ..writeln('fi');
+  return null;
+}
 
-  buffer
-    ..writeln(
-      'if [[ "\$1" == "api" && "\$4" == "repos/$repo/hooks/$webhookId" ]]; then',
-    )
-    ..writeln('  exit 0')
-    ..writeln('fi');
-
-  buffer
-    ..writeln(r'''echo "unexpected gh args: $*" >&2''')
-    ..writeln('exit 1');
-
-  await ghScript.writeAsString(buffer.toString());
-  await makeScriptExecutable(ghScript);
+Future<void> _appendLine(File file, String line) async {
+  for (var attempt = 0; attempt < 200; attempt += 1) {
+    RandomAccessFile? log;
+    try {
+      log = file.openSync(mode: FileMode.append);
+      log.lockSync(FileLock.exclusive);
+      log.writeStringSync(line);
+      log.unlockSync();
+      return;
+    } on FileSystemException {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    } finally {
+      log?.closeSync();
+    }
+  }
+  await file.writeAsString(line, mode: FileMode.append);
 }
