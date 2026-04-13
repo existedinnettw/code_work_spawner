@@ -745,9 +745,9 @@ class IssueTrackerClient {
             if (body != null) {
               request.headers.set(
                 HttpHeaders.contentTypeHeader,
-                'application/json',
+                'application/json; charset=utf-8',
               );
-              request.write(jsonEncode(body));
+              request.add(utf8.encode(jsonEncode(body)));
             }
             final response = await request.close();
             final responseBody = await utf8.decodeStream(response);
@@ -833,7 +833,7 @@ class IssueTrackerClient {
         'Basic ${base64Encode(utf8.encode('apikey:${config.token}'))}',
       );
       if (body != null) {
-        request.write(jsonEncode(body));
+        request.add(utf8.encode(jsonEncode(body)));
       }
 
       final response = await request.close();

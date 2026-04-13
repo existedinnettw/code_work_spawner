@@ -125,17 +125,19 @@ class DiscordWebhookNotifier implements Notifier {
     final uri = Uri.parse(webhookUrl);
     final request = await _httpClient.postUrl(uri);
     request.headers.contentType = ContentType.json;
-    request.write(
-      jsonEncode({
-        'content': formatDiscordNotificationMessage(
-          event: event,
-          context: context,
-        ),
-        if (config.username != null && config.username!.isNotEmpty)
-          'username': config.username,
-        if (config.avatarUrl != null && config.avatarUrl!.isNotEmpty)
-          'avatar_url': config.avatarUrl,
-      }),
+    request.add(
+      utf8.encode(
+        jsonEncode({
+          'content': formatDiscordNotificationMessage(
+            event: event,
+            context: context,
+          ),
+          if (config.username != null && config.username!.isNotEmpty)
+            'username': config.username,
+          if (config.avatarUrl != null && config.avatarUrl!.isNotEmpty)
+            'avatar_url': config.avatarUrl,
+        }),
+      ),
     );
 
     final response = await request.close();

@@ -78,7 +78,7 @@ Future<void> _postWebhook(
     final request = await client.postUrl(Uri.parse(targetUrl));
     request.headers.contentType = ContentType.json;
     request.headers.set(webhookHeader, 'issue_comment');
-    request.write(jsonEncode(payload));
+    request.add(utf8.encode(jsonEncode(payload)));
     await request.close();
   } finally {
     client.close(force: true);

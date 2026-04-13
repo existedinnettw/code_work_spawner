@@ -363,7 +363,7 @@ Future<void> _postGitHubWebhook(
     final request = await client.postUrl(Uri.parse(targetUrl));
     request.headers.contentType = ContentType.json;
     request.headers.set('X-GitHub-Event', 'issue_comment');
-    request.write(jsonEncode(webhookPayload));
+    request.add(utf8.encode(jsonEncode(webhookPayload)));
     await request.close();
   } finally {
     client.close(force: true);
