@@ -88,9 +88,7 @@ void registerIssueAssistantAppRunOnceWorktreeTests() {
         );
 
         // And an orchestrator-style config pointing to the fake repo and responder.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -212,7 +210,7 @@ projects:
       }, cwdCapture: cwdCapture);
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 worktreeDir: ${worktreeRoot.path}
 defaults:
@@ -312,7 +310,7 @@ projects:
       });
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:

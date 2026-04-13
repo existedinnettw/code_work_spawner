@@ -85,9 +85,7 @@ void main() {
         });
 
         // And an orchestrator-style config that marks the project provider as gitea.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -212,9 +210,7 @@ CWS_GITEA_TOKEN=test-token
         });
 
         // And an orchestrator-style config that marks the project provider as gitlab.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -315,9 +311,7 @@ projects:
         });
 
         // And an orchestrator-style config that uses OpenProject as the tracker provider.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:

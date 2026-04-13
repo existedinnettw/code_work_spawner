@@ -60,7 +60,7 @@ void main() {
     test('Merge defaults with project overrides', () async {
       // Given camelCase config with shared defaults and one project override.
       final tempDir = await Directory.systemTemp.createTemp('cws-config-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -120,7 +120,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-default-templates-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -163,7 +163,7 @@ projects:
     test('Resolve config placeholders from a colocated dotenv file', () async {
       // Given an orchestrator config with environment placeholders and a colocated dotenv file.
       final tempDir = await Directory.systemTemp.createTemp('cws-dotenv-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       final dotenvFile = File(p.join(tempDir.path, '.env'));
       addTearDown(AppEnvironment.resetForTest);
       await dotenvFile.writeAsString('''
@@ -211,7 +211,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-comment-template-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -249,7 +249,7 @@ projects:
     test('Normalize legacy codex json flag', () async {
       // Given an orchestrator config that still uses the legacy codex --json-output flag.
       final tempDir = await Directory.systemTemp.createTemp('cws-codex-args-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -285,7 +285,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-notification-config-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -340,7 +340,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-desktop-notification-config-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -379,7 +379,7 @@ projects:
     test('Load camelCase config with shared worktree root', () async {
       // Given camelCase config with dataDir, worktreeDir, and project settings.
       final tempDir = await Directory.systemTemp.createTemp('cws-camel-case-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 dataDir: ~/.agent-orchestrator
 worktreeDir: ~/.worktrees
@@ -420,7 +420,7 @@ projects:
     test('Infer a Gitea issue tracker provider from the event source', () async {
       // Given a config whose project sets tea/polling as the event source type.
       final tempDir = await Directory.systemTemp.createTemp('cws-gitea-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -456,7 +456,7 @@ projects:
     test('Infer a GitLab issue tracker provider from the event source', () async {
       // Given a config whose project sets glab/polling as the event source type.
       final tempDir = await Directory.systemTemp.createTemp('cws-gitlab-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -497,9 +497,7 @@ projects:
         final tempDir = await Directory.systemTemp.createTemp(
           'cws-openproject-',
         );
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 projects:
   sample:
@@ -542,7 +540,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-openproject-missing-scm-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -585,7 +583,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-openproject-project-name-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -621,7 +619,7 @@ projects:
     test('Load gh/gosmee as the issue event source', () async {
       // Given a GitHub project config that opts into gh/gosmee.
       final tempDir = await Directory.systemTemp.createTemp('cws-gh-gosmee-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -655,7 +653,7 @@ projects:
     test('Load glab/gosmee as the issue event source', () async {
       // Given a GitLab project config that opts into glab/gosmee.
       final tempDir = await Directory.systemTemp.createTemp('cws-glab-gosmee-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -693,9 +691,7 @@ projects:
         final tempDir = await Directory.systemTemp.createTemp(
           'cws-explicit-scm-',
         );
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 projects:
   sample:
@@ -732,7 +728,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-legacy-provider-fallback-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -769,7 +765,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-gh-gosmee-gitea-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -813,9 +809,7 @@ projects:
         final tempDir = await Directory.systemTemp.createTemp(
           'cws-glab-gosmee-github-',
         );
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 projects:
   sample:
@@ -860,7 +854,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-webhook-forward-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -896,7 +890,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-channel-reconcile-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -941,7 +935,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-legacy-channel-poll-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -985,9 +979,7 @@ projects:
         final tempDir = await Directory.systemTemp.createTemp(
           'cws-webhook-forward-gitea-',
         );
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 projects:
   sample:
@@ -1028,7 +1020,7 @@ projects:
     test('Load tea/gosmee as the issue event source', () async {
       // Given a Gitea project config that opts into tea/gosmee.
       final tempDir = await Directory.systemTemp.createTemp('cws-gosmee-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -1066,9 +1058,7 @@ projects:
         final tempDir = await Directory.systemTemp.createTemp(
           'cws-gosmee-github-',
         );
-        final configFile = File(
-          p.join(tempDir.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 projects:
   sample:
@@ -1110,7 +1100,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-snake-case-invalid-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 worktree_dir: ~/.worktrees
 projects:
@@ -1146,7 +1136,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-invalid-repo-slug-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:
@@ -1180,7 +1170,7 @@ projects:
     test('Generate a starter config that parses as valid YAML', () async {
       // Given the built-in initial config renderer.
       final tempDir = await Directory.systemTemp.createTemp('cws-init-config-');
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       final contents = AppConfig.renderInitialConfig();
 
       // When writing the generated starter config to disk.
@@ -1220,7 +1210,7 @@ projects:
       final tempDir = await Directory.systemTemp.createTemp(
         'cws-init-optional-',
       );
-      final configFile = File(p.join(tempDir.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       final contents = AppConfig.renderInitialConfig()
           .replaceFirst(
             '    # capabilities: ["planning", "bug_verification"]',

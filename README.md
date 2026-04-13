@@ -1,44 +1,42 @@
 # code_work_spawner
 
-Repository issue thread assistant with an Agent Orchestrator style YAML config.
+Repository issue thread assistant configured by YAML.
 
-It consumes issue tracker events for configured GitHub, GitLab, Gitea, or OpenProject
-projects, reads issue threads, and uses CLI responders such as `codex`, `opencode`, or
-`copilot-cli` to decide when to reply. It supports
-multi-repo config, responder fallback chains, and optional Discord webhook and
-desktop notifications. Repository access is configured separately through each
-project's `scm` block so tracker and checkout handling can evolve
-independently.
+It watches GitHub, GitLab, Gitea, or OpenProject issue events, reads threads, and triggers CLI responders such as `codex`, `opencode`, or `copilot-cli`.
+Supports multi-repo config, responder fallback chains, isolated worktrees, and optional Discord or desktop notifications.
+
+<img src="README.assets/image.png" style="width:50%;">
 
 ## Highlights
 
-- Consume GitHub, GitLab, Gitea, and OpenProject issue events across multiple projects
-- Trigger replies from mentions or meaningful thread updates
-- Run planning and bug-verification flows in isolated worktrees
-- Send optional Discord or desktop notifications for assistant events
+- Track issue events across multiple repositories
+- Reply on mentions or meaningful thread updates
+- Run planning and bug verification in isolated worktrees
+- Send optional Discord and desktop notifications
 
 ## Requirements
 
 - Dart SDK
-- `gh`, `glab`, `tea`, and/or OpenProject API credentials authenticated for the target projects
+- Authenticated `gh`, `glab`, `tea`, and/or OpenProject API credentials
 - Local checkouts for configured repositories
-- Optional local responder CLIs such as `codex`, `opencode`, or `copilot-cli`
+- Optional responder CLIs (`codex`, `opencode`, `copilot-cli`)
 
 ## Config
 
-Create a local `agent-orchestrator.yaml` and use
-[`examples/README.md`](examples/README.md) plus
-[`examples/simple-github.yaml`](examples/simple-github.yaml),
-[`examples/simple-gitlab.yaml`](examples/simple-gitlab.yaml), or
-[`examples/simple-gitea.yaml`](examples/simple-gitea.yaml) as the reference.
+Create `CWS_conf.yaml` using:
+- [examples/README.md](examples/README.md)
+- [examples/simple-github.yaml](examples/simple-github.yaml)
+- [examples/simple-gitlab.yaml](examples/simple-gitlab.yaml)
+- [examples/simple-gitea.yaml](examples/simple-gitea.yaml)
 
-Environment placeholders such as `${CWS_DISCORD_WEBHOOK}` are resolved from the
-process environment and from a `.env` file placed next to the selected config
-file. Logging also supports `CWS_LOG_LEVEL` (or `LOG_LEVEL`) with values such
-as `trace`, `debug`, `info`, `warning`, `error`, or `fatal`. See
-[.env.example](.env.example) for a minimal starter file.
+Environment placeholders (for example `${CWS_DISCORD_WEBHOOK}`) are resolved
+from process env vars and from a `.env` file next to your config.
 
-Generate a starter config:
+Logging level can be set with `CWS_LOG_LEVEL` (or `LOG_LEVEL`): `trace`,
+`debug`, `info`, `warning`, `error`, `fatal`. Minimal example:
+[.env.example](.env.example).
+
+Generate starter config:
 
 ```bash
 dart run bin/code_work_spawner.dart init-config
@@ -50,23 +48,25 @@ dart run bin/code_work_spawner.dart init-config --output agent-orchestrator.yaml
 
 ## Run
 
+Generate code first:
+
 ```bash
 dart run build_runner build --delete-conflicting-outputs
 ```
 
-Single event-source reconciliation cycle:
+Run once:
 
 ```bash
 dart run bin/code_work_spawner.dart --once
 ```
 
-Long-running tracker runtime:
+Run continuously:
 
 ```bash
 dart run bin/code_work_spawner.dart
 ```
 
-Override tracker CLI paths when needed:
+Override CLI paths if needed:
 
 ```bash
 dart run bin/code_work_spawner.dart \
@@ -79,7 +79,7 @@ dart run bin/code_work_spawner.dart \
 
 ## Install Binary
 
-Install the latest matching release binary from GitHub Releases:
+Install latest release binary:
 
 ```bash
 # export GH_TOKEN="$TOKEN" # If got 404, `GITHUB_TOKEN` also work

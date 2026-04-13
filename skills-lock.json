@@ -46,6 +46,11 @@
       "sourceType": "github",
       "computedHash": "8bfae087ef27eb37092d94caf1da3406b500aa908756772bb1349a1ac70823dd"
     },
+    "babysit-pr": {
+      "source": "openai/codex",
+      "sourceType": "github",
+      "computedHash": "8d952e21312ebf8573d9f5655c0e0eb3ad6e2ca14fcc6b95cbad046692eaf651"
+    },
     "breakdown-epic-arch": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
@@ -101,6 +106,11 @@
       "sourceType": "github",
       "computedHash": "a7d80450799b2141ddff9ec614477e237c1f50acb9eeade2dd869aeac3d004a9"
     },
+    "codex": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "4b7e8695807b567a7a7d467ab15b3da330aa0a847827067d79c654c540a72fe9"
+    },
     "comment-code-generate-a-tutorial": {
       "source": "github/awesome-copilot",
       "sourceType": "github",
@@ -120,6 +130,11 @@
       "source": "github/awesome-copilot",
       "sourceType": "github",
       "computedHash": "934c017d41118a44f4db0e80b526db175cadcfdf8c5354fc9eceb0b3cb6beb50"
+    },
+    "copilot-cli-quickstart": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "720e848c508c9fccc0d9edbdb7a68ede333866e1e0a126b7d4b179e01d7ba5d7"
     },
     "create-agentsmd": {
       "source": "github/awesome-copilot",

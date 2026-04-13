@@ -22,7 +22,7 @@ Future<File> writeSingleProjectIssueAssistantConfig({
   required String repoPath,
   required List<String> eventSourceLines,
 }) async {
-  final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+  final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
   final eventSourceYaml = eventSourceLines
       .map((line) => '        $line')
       .join('\n');

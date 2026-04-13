@@ -1081,6 +1081,11 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     #     timeout: 10m
     #   - id: opencode
     #     command: opencode
+    #     args: ["run", "-f", "json"]
+    #     timeout: 10m
+    #   - id: copilot-cli
+    #     command: copilot
+    #     args: ["--allow-all", "--autopilot", "-p", "--output-format", "json"]
     #     timeout: 10m
     # notifications:
     #   - type: discordWebhook

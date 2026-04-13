@@ -99,7 +99,7 @@ void registerIssueAssistantAppRunOnceNotificationTests() {
       });
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -225,9 +225,7 @@ projects:
         }());
 
         // And an orchestrator-style config with a discord webhook notifier.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:

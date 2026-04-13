@@ -79,7 +79,7 @@ void registerIssueAssistantAppRunOnceCoreTests() {
       });
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -189,9 +189,7 @@ projects:
         });
 
         // And an orchestrator-style config pointing to the fake repo and responder.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -291,7 +289,7 @@ projects:
       });
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -419,9 +417,7 @@ projects:
         });
 
         // And an orchestrator-style config limiting replies after a human comment to one.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -524,7 +520,7 @@ projects:
       }, stderr: 'codex diagnostic trace');
 
       // And an orchestrator-style config pointing to the fake repo and responder.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:

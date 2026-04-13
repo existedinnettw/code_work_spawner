@@ -144,9 +144,7 @@ void registerIssueAssistantAppRunOnceMultiProjectTests() {
         });
 
         // And an orchestrator-style config with both repositories enabled.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -293,7 +291,7 @@ projects:
       });
 
       // And an orchestrator-style config that marks the project provider as gitea.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -392,9 +390,7 @@ CWS_GITEA_TOKEN=test-token
         });
 
         // And an orchestrator-style config that uses an OpenProject project name.
-        final configFile = File(
-          p.join(sandbox.path, 'agent-orchestrator.yaml'),
-        );
+        final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
         await configFile.writeAsString('''
 defaults:
   issueAssistant:

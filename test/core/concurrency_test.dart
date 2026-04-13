@@ -124,7 +124,7 @@ void registerIssueAssistantAppRunOnceConcurrencyTests() {
       );
 
       // And an orchestrator-style config with maxConcurrentIssues set to three.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -266,7 +266,7 @@ projects:
       });
 
       // And a fake gh command that fails the authenticated user lookup.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 defaults:
   issueAssistant:
@@ -360,7 +360,7 @@ projects:
       );
 
       // And an AO subset config that enables the assistant without defining responders.
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
 projects:
   sample:

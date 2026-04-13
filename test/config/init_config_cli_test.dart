@@ -115,7 +115,7 @@ void main() {
     test('Print the starter config to stdout', () async {
       // Given the CLI is executed with the init-config command.
       final sandbox = await Directory.systemTemp.createTemp('cws-cli-stdout-');
-      final configFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final configFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       final result = await runCli(['init-config']);
 
       // When the process completes successfully.
@@ -164,7 +164,7 @@ void main() {
     test('Refuse overwrite unless force is provided', () async {
       // Given an existing output file for the init-config command.
       final sandbox = await Directory.systemTemp.createTemp('cws-cli-force-');
-      final outputFile = File(p.join(sandbox.path, 'agent-orchestrator.yaml'));
+      final outputFile = File(p.join(sandbox.path, 'CWS_conf.yaml'));
       await outputFile.writeAsString('original');
 
       // When the CLI writes without the force flag and then with the force flag.

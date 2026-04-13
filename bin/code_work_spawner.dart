@@ -18,7 +18,7 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
   _CodeWorkSpawnerCommandRunner()
     : super(
         'code_work_spawner',
-        'Repository issue thread assistant with an Agent Orchestrator style YAML config.',
+        'Repository issue thread assistant with a YAML config.',
       ) {
     argParser
       ..addFlag(
@@ -30,8 +30,8 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
       ..addOption(
         'config',
         abbr: 'c',
-        help: 'Path to agent-orchestrator.yaml.',
-        defaultsTo: 'agent-orchestrator.yaml',
+        help: 'Path to the YAML config file.',
+        defaultsTo: 'CWS_conf.yaml',
       )
       ..addOption(
         'db',

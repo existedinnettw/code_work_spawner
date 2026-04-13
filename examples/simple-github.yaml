@@ -25,10 +25,15 @@ defaults:
       # Replace this with a responder available on your machine.
       - id: codex
         command: codex
-        args: ["exec", "--json"]
+        args: ["-s", "danger-full-access", "exec", "--json"]
         timeout: 10m
       # - id: opencode
       #   command: opencode
+      #   args: ["run", "-f", "json"]
+      #   timeout: 10m
+      # - id: copilot-cli
+      #   command: copilot
+      #   args: ["--allow-all", "--autopilot", "-p", "--output-format", "json"]
       #   timeout: 10m
     # notifications:
     #   # Optional Discord notifications for assistant activity.
