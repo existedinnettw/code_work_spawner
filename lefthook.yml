@@ -13,3 +13,11 @@ pre-push:
   commands:
     require-latest-main:
       run: uv run scripts/check_branch_up_to_date.py
+
+post-checkout:
+  commands:
+    private-skills-sync:
+      run: uvx --from git+https://github.com/existedinnettw/inkr-harness-tools.git inkr-skill-sync .local .agents --recursive
+      continue: true #ignore fail
+    pub-get-on-pubspec-change:
+      run: dart tool/pub_get_on_pubspec_change.dart {1} {2} {3}
