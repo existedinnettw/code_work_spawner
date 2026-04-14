@@ -57,6 +57,10 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
         'gosmee-command',
         help: 'Path to the gosmee executable.',
         defaultsTo: 'gosmee',
+      )
+      ..addOption(
+        'log-level',
+        help: 'Minimum log level: trace, debug, info, warn, error.',
       );
 
     addCommand(_InitConfigCommand());
@@ -64,6 +68,14 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
 
   @override
   Future<void> runCommand(ArgResults topLevelResults) async {
+    final cliMinimumLevel = _resolveCliMinimumLevel(
+      topLevelResults['log-level'] as String?,
+    );
+    _configureLogging(
+      cliMinimumLevel: cliMinimumLevel,
+      environment: AppEnvironment.variables,
+    );
+
     if (topLevelResults['help'] as bool) {
       stdout.writeln(usage);
       return;
@@ -76,7 +88,10 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
 
     final configPath = topLevelResults['config'] as String;
     AppEnvironment.loadForConfig(configPath);
-    _configureLogging();
+    _configureLogging(
+      cliMinimumLevel: cliMinimumLevel,
+      environment: AppEnvironment.variables,
+    );
 
     final config = await AppConfig.load(configPath);
     final logger = AppLogger('code_work_spawner.cli');
@@ -123,6 +138,21 @@ class _CodeWorkSpawnerCommandRunner extends CommandRunner<void> {
     } finally {
       await app.close();
     }
+  }
+
+  AppLogLevel? _resolveCliMinimumLevel(String? value) {
+    if (value == null) {
+      return null;
+    }
+    final parsed = AppLogger.parseLevel(value);
+    if (parsed == null || parsed == AppLogLevel.fatal) {
+      throw UsageException(
+        'Invalid value for --log-level "$value". '
+        'Allowed values: trace, debug, info, warn, error.',
+        usage,
+      );
+    }
+    return parsed;
   }
 }
 
@@ -210,9 +240,14 @@ class _InitConfigCommand extends Command<void> {
   }
 }
 
-void _configureLogging() {
+void _configureLogging({
+  required Map<String, String> environment,
+  AppLogLevel? cliMinimumLevel,
+}) {
   AppLogger.configure(
-    minimumLevel: AppLogger.resolveMinimumLevel(AppEnvironment.variables),
+    minimumLevel:
+        cliMinimumLevel ??
+        AppLogger.resolveMinimumLevel(environment, fallback: AppLogLevel.info),
     useColors: stdout.hasTerminal,
   );
 }

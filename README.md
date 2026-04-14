@@ -32,9 +32,9 @@ Create `CWS_conf.yaml` using:
 Environment placeholders (for example `${CWS_DISCORD_WEBHOOK}`) are resolved
 from process env vars and from a `.env` file next to your config.
 
-Logging level can be set with `CWS_LOG_LEVEL` (or `LOG_LEVEL`): `trace`,
-`debug`, `info`, `warning`, `error`, `fatal`. Minimal example:
-[.env.example](.env.example).
+Set logging with `--log-level trace|debug|info|warn|error` or env
+`CWS_LOG_LEVEL` / `LOG_LEVEL`. Precedence: CLI > env > default `info`.
+Minimal env example: [.env.example](.env.example).
 
 Generate starter config:
 
@@ -64,6 +64,8 @@ Run continuously:
 
 ```bash
 dart run bin/code_work_spawner.dart
+# With higher verbosity for troubleshooting:
+dart run bin/code_work_spawner.dart --log-level debug
 ```
 
 Override CLI paths if needed:
