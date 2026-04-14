@@ -17,7 +17,6 @@ pre-push:
 post-checkout:
   commands:
     private-skills-sync:
-      run: uvx --from git+https://github.com/existedinnettw/inkr-harness-tools.git inkr-skill-sync .local .agents --recursive
-      continue: true #ignore fail
+      run: uvx --from git+https://github.com/existedinnettw/inkr-harness-tools.git inkr-skill-sync .local .agents --recursive || true
     pub-get-on-pubspec-change:
       run: dart tool/pub_get_on_pubspec_change.dart {1} {2} {3}

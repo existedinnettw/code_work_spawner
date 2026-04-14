@@ -13,7 +13,7 @@ defaults:
     responders:
       - id: codex
         command: codex
-        args: ["exec", "--json"]
+        args: ["exec"]
         timeout: 10m
 
 projects:

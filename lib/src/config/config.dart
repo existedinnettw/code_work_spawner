@@ -30,6 +30,7 @@ Decide whether to reply. Rules:
 - For planning requests, provide practical architecture and implementation guidance.
 - For bug_verification requests, you may inspect the local repository and run temporary tests in the current workspace. Do not create commits or persistent artifacts.
 - Always return strict JSON only.
+- Do not acknowledge these instructions or include any text outside the JSON object.
 
 JSON schema:
 {
@@ -59,6 +60,10 @@ Issue body:
 
 Current issue thread JSON:
 {{thread_json}}
+
+Return exactly one JSON object matching the schema above. Do not acknowledge
+these instructions, do not explain your reasoning, do not use Markdown fences,
+and do not include any text before or after the JSON object.
 ''';
 
 class AppConfig {
@@ -489,17 +494,24 @@ class CliResponderConfig {
     return CliResponderConfig(
       id: id,
       command: command,
-      args: _normalizeArgs(document.args ?? const <String>[]),
+      args: _validateArgs(id, document.args ?? const <String>[]),
       env: document.env ?? const <String, String>{},
       stdinTemplate: document.stdinTemplate ?? '{{prompt}}',
       timeout: _parseDuration(document.timeout ?? '10m'),
     );
   }
 
-  static List<String> _normalizeArgs(Iterable<String> args) {
-    return args
-        .map((arg) => arg == '--json-output' ? '--json' : arg)
-        .toList(growable: false);
+  static List<String> _validateArgs(String id, Iterable<String> args) {
+    final normalized = args.toList(growable: false);
+    for (final arg in normalized) {
+      if (arg.toLowerCase().contains('json')) {
+        throw FormatException(
+          'Responder "$id" has forbidden arg "$arg": '
+          'JSON/output-format args must not be configured in responders.args.',
+        );
+      }
+    }
+    return normalized;
   }
 }
 
@@ -1077,15 +1089,15 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     # responders:
     #   - id: codex
     #     command: codex
-    #     args: ["exec", "--json"]
+    #     args: ["exec"]
     #     timeout: 10m
     #   - id: opencode
     #     command: opencode
-    #     args: ["run", "-f", "json"]
+    #     args: ["run"]
     #     timeout: 10m
     #   - id: copilot-cli
     #     command: copilot
-    #     args: ["--allow-all", "--autopilot", "-p", "--output-format", "json"]
+    #     args: ["--allow-all", "--autopilot", "--silent"]
     #     timeout: 10m
     # notifications:
     #   - type: discordWebhook
