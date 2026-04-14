@@ -80,7 +80,17 @@ Start from [`examples/simple-github.yaml`](simple-github.yaml) for GitHub,
 This repo uses `dataDir`, `worktreeDir`, and `projects`, and uses
 `worktreeDir` for bug-verification worktrees.
 
+## responder CLI mode
+
+Configure responders in plain-text mode. Do not add JSON/output-format flags in
+`responders[].args` (for example `--json`, `--json-output`, `--output-format`,
+or `-f json`), because `code_work_spawner` owns response-format handling.
+
+Prompts are passed through stdin via `stdinTemplate` (default: `{{prompt}}`).
+In most cases prompt flags are not needed in `responders[].args`, because the
+real prompt already comes from stdin. Only add a prompt flag if a specific CLI
+fails without it.
+
 ## tea + windows
 
 The `tea` CLI has known severe issues on Windows due to lipgloss/v2 query console color. We had bypass it by read config file of `tea` directly, but only token login is supported. And need to config a default login through `tea login default <LOGIN>`.
-

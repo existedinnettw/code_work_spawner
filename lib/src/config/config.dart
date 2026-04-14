@@ -494,17 +494,24 @@ class CliResponderConfig {
     return CliResponderConfig(
       id: id,
       command: command,
-      args: _normalizeArgs(document.args ?? const <String>[]),
+      args: _validateArgs(id, document.args ?? const <String>[]),
       env: document.env ?? const <String, String>{},
       stdinTemplate: document.stdinTemplate ?? '{{prompt}}',
       timeout: _parseDuration(document.timeout ?? '10m'),
     );
   }
 
-  static List<String> _normalizeArgs(Iterable<String> args) {
-    return args
-        .map((arg) => arg == '--json-output' ? '--json' : arg)
-        .toList(growable: false);
+  static List<String> _validateArgs(String id, Iterable<String> args) {
+    final normalized = args.toList(growable: false);
+    for (final arg in normalized) {
+      if (arg.toLowerCase().contains('json')) {
+        throw FormatException(
+          'Responder "$id" has forbidden arg "$arg": '
+          'JSON/output-format args must not be configured in responders.args.',
+        );
+      }
+    }
+    return normalized;
   }
 }
 
@@ -1082,15 +1089,15 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     # responders:
     #   - id: codex
     #     command: codex
-    #     args: ["exec", "--json"]
+    #     args: ["exec"]
     #     timeout: 10m
     #   - id: opencode
     #     command: opencode
-    #     args: ["run", "-f", "json"]
+    #     args: ["run"]
     #     timeout: 10m
     #   - id: copilot-cli
     #     command: copilot
-    #     args: ["-p", "", "--allow-all", "--autopilot", "--silent"]
+    #     args: ["--allow-all", "--autopilot", "--silent"]
     #     timeout: 10m
     # notifications:
     #   - type: discordWebhook

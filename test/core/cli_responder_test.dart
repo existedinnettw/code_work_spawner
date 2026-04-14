@@ -395,7 +395,7 @@ projects:
     test('Decode Copilot CLI JSONL assistant messages', () async {
       // Given a responder command that emits Copilot CLI JSONL events.
       final sandbox = await Directory.systemTemp.createTemp(
-        'cws-copilot-jsonl-',
+        'cws-copilot-events-',
       );
       final scriptFile = File(p.join(sandbox.path, 'responder.dart'));
       await scriptFile.writeAsString('''

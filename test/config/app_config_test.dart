@@ -241,13 +241,13 @@ projects:
     });
 
     /// ```gherkin
-    /// Scenario: Normalize legacy codex json flag
-    ///   Given an orchestrator config that still uses the legacy codex --json-output flag
+    /// Scenario: Reject responder args that contain json output flags
+    ///   Given an orchestrator config that configures a responder json output argument
     ///   When loading the app config from disk
-    ///   Then the responder args are normalized to the current codex --json flag
+    ///   Then loading fails with a format exception about forbidden args
     /// ```
-    test('Normalize legacy codex json flag', () async {
-      // Given an orchestrator config that still uses the legacy codex --json-output flag.
+    test('Reject responder args that contain json output flags', () async {
+      // Given an orchestrator config that configures a responder json output argument.
       final tempDir = await Directory.systemTemp.createTemp('cws-codex-args-');
       final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
       await configFile.writeAsString('''
@@ -264,12 +264,96 @@ projects:
 ''');
 
       // When loading the app config from disk.
+      final future = AppConfig.load(configFile.path);
+
+      // Then loading fails with a format exception about forbidden args.
+      await expectLater(
+        future,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('forbidden arg "--json-output"'),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Reject responder args with mixed-case json tokens
+    ///   Given an orchestrator config that configures a responder argument containing Json in mixed case
+    ///   When loading the app config from disk
+    ///   Then loading fails with a format exception about forbidden args
+    /// ```
+    test('Reject responder args with mixed-case json tokens', () async {
+      // Given an orchestrator config that configures a responder argument containing Json in mixed case.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-codex-args-case-',
+      );
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    responders:
+      - id: codex
+        command: codex
+        args: ["exec", "--JsonOutput"]
+projects:
+  sample:
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
+      final future = AppConfig.load(configFile.path);
+
+      // Then loading fails with a format exception about forbidden args.
+      await expectLater(
+        future,
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('forbidden arg "--JsonOutput"'),
+          ),
+        ),
+      );
+    });
+
+    /// ```gherkin
+    /// Scenario: Keep non-format responder args
+    ///   Given an orchestrator config that only sets non-format responder args
+    ///   When loading the app config from disk
+    ///   Then those args remain available to the responder
+    /// ```
+    test('Keep non-format responder args', () async {
+      // Given an orchestrator config that only sets non-format responder args.
+      final tempDir = await Directory.systemTemp.createTemp(
+        'cws-codex-args-keep-',
+      );
+      final configFile = File(p.join(tempDir.path, 'CWS_conf.yaml'));
+      await configFile.writeAsString('''
+defaults:
+  issueAssistant:
+    responders:
+      - id: codex
+        command: codex
+        args: ["-s", "danger-full-access", "exec", "--allow-all"]
+projects:
+  sample:
+    repo: owner/sample
+    path: ${tempDir.path}
+''');
+
+      // When loading the app config from disk.
       final config = await AppConfig.load(configFile.path);
 
-      // Then the responder args are normalized to the current codex --json flag.
+      // Then those args remain available to the responder.
       expect(config.projects['sample']!.issueAssistant.responders.single.args, [
+        '-s',
+        'danger-full-access',
         'exec',
-        '--json',
+        '--allow-all',
       ]);
     });
 
@@ -1223,10 +1307,7 @@ projects:
           .replaceFirst('    # responders:', '    responders:')
           .replaceFirst('    #   - id: codex', '      - id: codex')
           .replaceFirst('    #     command: codex', '        command: codex')
-          .replaceFirst(
-            '    #     args: ["exec", "--json"]',
-            '        args: ["exec", "--json"]',
-          )
+          .replaceFirst('    #     args: ["exec"]', '        args: ["exec"]')
           .replaceFirst('    #     timeout: 10m', '        timeout: 10m')
           .replaceFirst('    # issueAssistant:', '    issueAssistant:')
           .replaceFirst('    #   enabled: true', '      enabled: true')
