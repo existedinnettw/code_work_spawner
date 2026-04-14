@@ -345,10 +345,12 @@ class IssueAssistantApp {
           lastError = error;
           final rawStdout = switch (error) {
             CliResponderExecutionException(:final rawStdout) => rawStdout,
+            CliResponderOutputFormatException(:final rawStdout) => rawStdout,
             _ => '',
           };
           final rawStderr = switch (error) {
             CliResponderExecutionException(:final rawStderr) => rawStderr,
+            CliResponderOutputFormatException(:final rawStderr) => rawStderr,
             _ => error.toString(),
           };
           _logResponderOutput(

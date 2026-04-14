@@ -33,7 +33,7 @@ defaults:
       #   timeout: 10m
       # - id: copilot-cli
       #   command: copilot
-      #   args: ["--allow-all", "--autopilot", "-p", "--output-format", "json"]
+      #   args: ["-p", "", "--allow-all", "--autopilot", "--silent"]
       #   timeout: 10m
     # notifications:
     #   # Optional Discord notifications for assistant activity.

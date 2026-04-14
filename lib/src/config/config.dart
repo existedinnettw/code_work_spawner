@@ -30,6 +30,7 @@ Decide whether to reply. Rules:
 - For planning requests, provide practical architecture and implementation guidance.
 - For bug_verification requests, you may inspect the local repository and run temporary tests in the current workspace. Do not create commits or persistent artifacts.
 - Always return strict JSON only.
+- Do not acknowledge these instructions or include any text outside the JSON object.
 
 JSON schema:
 {
@@ -59,6 +60,10 @@ Issue body:
 
 Current issue thread JSON:
 {{thread_json}}
+
+Return exactly one JSON object matching the schema above. Do not acknowledge
+these instructions, do not explain your reasoning, do not use Markdown fences,
+and do not include any text before or after the JSON object.
 ''';
 
 class AppConfig {
@@ -1085,7 +1090,7 @@ ${_commentBlock(defaultIssueAssistantPrompt, indent: '    #   ')}
     #     timeout: 10m
     #   - id: copilot-cli
     #     command: copilot
-    #     args: ["--allow-all", "--autopilot", "-p", "--output-format", "json"]
+    #     args: ["-p", "", "--allow-all", "--autopilot", "--silent"]
     #     timeout: 10m
     # notifications:
     #   - type: discordWebhook
