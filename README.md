@@ -32,11 +32,8 @@ Create `CWS_conf.yaml` using:
 Environment placeholders (for example `${CWS_DISCORD_WEBHOOK}`) are resolved
 from process env vars and from a `.env` file next to your config.
 
-Logging level can be set by CLI flag or environment:
-- CLI: `--log-level trace|debug|info|warn|error`
-- Env: `CWS_LOG_LEVEL` (or `LOG_LEVEL`) with `trace|debug|info|warning|error|fatal`
-
-Precedence: `--log-level` > env var > default `info`.
+Set logging with `--log-level trace|debug|info|warn|error` or env
+`CWS_LOG_LEVEL` / `LOG_LEVEL`. Precedence: CLI > env > default `info`.
 Minimal env example: [.env.example](.env.example).
 
 Generate starter config:
