@@ -280,14 +280,12 @@ class GitLabGosmeeIssueEventSource implements IssueEventSource {
           'repo=$fullName object_kind=$objectKind action=$action '
           'issue=${issue.number} state=${issue.state}',
         );
-        if (issue.state == 'open' || issue.state == 'opened') {
-          _queuedIssues['${project.key}#${issue.number}'] = _QueuedGitLabIssue(
-            project: project,
-            issue: issue,
-            onBatch: onBatch,
-          );
-          _scheduleFlush();
-        }
+        _queuedIssues['${project.key}#${issue.number}'] = _QueuedGitLabIssue(
+          project: project,
+          issue: issue,
+          onBatch: onBatch,
+        );
+        _scheduleFlush();
       } else {
         _log(
           'gitlab/gosmee webhook ignored repo=${fullName ?? "(missing)"} '

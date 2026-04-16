@@ -8,6 +8,8 @@ part 'database.g.dart';
 
 enum JobStatus { queued, running, completed, failed, skipped }
 
+enum IssueLifecycleState { opened, closed }
+
 class ProjectStates extends Table {
   TextColumn get projectKey => text()();
   TextColumn get repo => text()();
@@ -22,9 +24,14 @@ class IssueThreadStates extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get projectKey => text()();
   IntColumn get issueNumber => integer()();
+  TextColumn get issueState =>
+      textEnum<IssueLifecycleState>().withDefault(const Constant('opened'))();
   TextColumn get fingerprint => text()();
   TextColumn get lastEvaluatedFingerprint => text().nullable()();
   TextColumn get lastDecision => text().nullable()();
+  IntColumn get lastProcessedCommentId => integer().nullable()();
+  TextColumn get responderSessionId => text().nullable()();
+  TextColumn get workspacePath => text().nullable()();
   IntColumn get lastCommentId => integer().nullable()();
   TextColumn get lastCommentUrl => text().nullable()();
   TextColumn get updatedAt => text()();
@@ -99,7 +106,32 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (migrator) => migrator.createAll(),
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await migrator.addColumn(
+          issueThreadStates,
+          issueThreadStates.issueState,
+        );
+        await migrator.addColumn(
+          issueThreadStates,
+          issueThreadStates.lastProcessedCommentId,
+        );
+        await migrator.addColumn(
+          issueThreadStates,
+          issueThreadStates.responderSessionId,
+        );
+        await migrator.addColumn(
+          issueThreadStates,
+          issueThreadStates.workspacePath,
+        );
+      }
+    },
+  );
 
   Future<ProjectState?> findProjectState(String projectKey) {
     return (select(
@@ -136,10 +168,14 @@ class AppDatabase extends _$AppDatabase {
   Future<void> upsertIssueThread({
     required String projectKey,
     required int issueNumber,
+    IssueLifecycleState issueState = IssueLifecycleState.opened,
     required String fingerprint,
     required DateTime updatedAt,
     String? lastEvaluatedFingerprint,
     String? lastDecision,
+    int? lastProcessedCommentId,
+    String? responderSessionId,
+    String? workspacePath,
     int? lastCommentId,
     String? lastCommentUrl,
   }) async {
@@ -147,9 +183,13 @@ class AppDatabase extends _$AppDatabase {
     final companion = IssueThreadStatesCompanion(
       projectKey: Value(projectKey),
       issueNumber: Value(issueNumber),
+      issueState: Value(issueState),
       fingerprint: Value(fingerprint),
       lastEvaluatedFingerprint: Value(lastEvaluatedFingerprint),
       lastDecision: Value(lastDecision),
+      lastProcessedCommentId: Value(lastProcessedCommentId),
+      responderSessionId: Value(responderSessionId),
+      workspacePath: Value(workspacePath),
       lastCommentId: Value(lastCommentId),
       lastCommentUrl: Value(lastCommentUrl),
       updatedAt: Value(updatedAt.toUtc().toIso8601String()),
@@ -160,10 +200,14 @@ class AppDatabase extends _$AppDatabase {
         IssueThreadStatesCompanion.insert(
           projectKey: projectKey,
           issueNumber: issueNumber,
+          issueState: Value(issueState),
           fingerprint: fingerprint,
           updatedAt: updatedAt.toUtc().toIso8601String(),
           lastEvaluatedFingerprint: Value(lastEvaluatedFingerprint),
           lastDecision: Value(lastDecision),
+          lastProcessedCommentId: Value(lastProcessedCommentId),
+          responderSessionId: Value(responderSessionId),
+          workspacePath: Value(workspacePath),
           lastCommentId: Value(lastCommentId),
           lastCommentUrl: Value(lastCommentUrl),
         ),

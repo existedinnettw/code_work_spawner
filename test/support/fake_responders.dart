@@ -71,6 +71,8 @@ class FakeResponderRunner extends CliResponderRunner {
     required IssueThread thread,
     required String prompt,
     required String workspacePath,
+    String? responderSessionId,
+    ResponderInvocationMode invocationMode = ResponderInvocationMode.coldStart,
   }) async {
     final fake = _responders[responder.command];
     if (fake == null) {
@@ -87,6 +89,8 @@ class FakeResponderRunner extends CliResponderRunner {
       'workspace_path': workspacePath,
       'issue_number': thread.issue.number.toString(),
       'thread_json': encodePrettyJson(thread.toJson()),
+      'responder_session_id': responderSessionId ?? '',
+      'invocation_mode': invocationMode.value,
     };
     final stdinPayload = renderTemplate(responder.stdinTemplate, context);
 

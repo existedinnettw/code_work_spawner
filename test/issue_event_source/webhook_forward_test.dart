@@ -119,6 +119,109 @@ void registerIssueAssistantAppRunWebhookForwardTests() {
     });
 
     /// ```gherkin
+    /// Scenario: Handle a closed issue event without posting a reply
+    ///   Given a temporary project checkout that can be used as the local repo path
+    ///   And a gh script that forwards one webhook event for a closed issue
+    ///   And a responder that would reply if the issue were open
+    ///   And an orchestrator-style config that uses gh/webhook-forward
+    ///   When the long-running app starts and receives the forwarded webhook
+    ///   Then it does not post a GitHub comment for that closed issue
+    ///   And it records the issue lifecycle state as closed
+    /// ```
+    test('Handle a closed issue event without posting a reply', () async {
+      // Given a temporary project checkout that can be used as the local repo path.
+      final sandboxRepo = await createSandboxRepo(
+        prefix: 'cws-webhook-closed-issue-',
+      );
+      final sandbox = sandboxRepo.sandbox;
+      final repoDir = sandboxRepo.repoDir;
+
+      // And a gh script that forwards one webhook event for a closed issue.
+      final ghScript = File(p.join(sandbox.path, 'gh'));
+      final ghLog = File(p.join(sandbox.path, 'gh-log.jsonl'));
+      final postedBody = File(p.join(sandbox.path, 'posted-body.md'));
+      final issue = {
+        'number': 13,
+        'title': 'Closed issue should cleanup lifecycle state',
+        'body': 'This issue is already closed.',
+        'state': 'closed',
+        'html_url': 'https://example.test/issues/13',
+        'updated_at': '2026-04-10T04:00:00Z',
+        'user': {'login': 'reporter'},
+        'labels': const <Map<String, Object?>>[],
+      };
+      final comments = [
+        {
+          'id': 61,
+          'body':
+              '@helper this should not trigger a reply because it is closed',
+          'html_url': 'https://example.test/issues/13#issuecomment-61',
+          'created_at': '2026-04-10T04:00:00Z',
+          'updated_at': '2026-04-10T04:00:00Z',
+          'user': {'login': 'reporter'},
+        },
+      ];
+      await writeWebhookForwardGhScript(
+        ghScript: ghScript,
+        repo: 'owner/sample',
+        issue: issue,
+        comments: comments,
+        ghLog: ghLog,
+        postedBodyFile: postedBody,
+        viewerLogin: 'octocat',
+      );
+
+      // And a responder that would reply if the issue were open.
+      final responderScript = File(p.join(sandbox.path, 'responder.sh'));
+      await writeResponderScript(responderScript, {
+        'decision': 'reply',
+        'mode': 'planning',
+        'markdown': 'Plan:\n- this should not be posted for closed issues',
+        'summary': 'would have replied if open',
+      });
+
+      // And an orchestrator-style config that uses gh/webhook-forward.
+      final configFile = await writeSingleProjectIssueAssistantConfig(
+        sandbox: sandbox,
+        responderPath: responderScript.path,
+        provider: 'github',
+        repo: 'owner/sample',
+        repoPath: repoDir.path,
+        eventSourceLines: const ['type: gh/webhook-forward'],
+      );
+      final app = await IssueAssistantApp.open(
+        config: await AppConfig.load(configFile.path),
+        databasePath: p.join(sandbox.path, 'state.sqlite3'),
+        ghCommand: ghScript.path,
+        responderRunner: fakeResponderRunner(),
+        commandExecutor: fakeExternalCommandExecutor(),
+      );
+      IssueThreadState? closedThread;
+
+      // When the long-running app starts and receives the forwarded webhook.
+      await runAppUntil(
+        app: app,
+        isReady: () async {
+          final thread = await app.database.findIssueThread('sample', 13);
+          if (thread?.issueState == IssueLifecycleState.closed) {
+            closedThread = thread;
+            return true;
+          }
+          return false;
+        },
+      );
+
+      // Then it does not post a GitHub comment for that closed issue.
+      expect(await postedBody.exists(), isFalse);
+
+      // And it records the issue lifecycle state as closed.
+      expect(closedThread, isNotNull);
+      expect(closedThread!.issueState, IssueLifecycleState.closed);
+      expect(closedThread!.responderSessionId, isNull);
+      expect(closedThread!.workspacePath, isNull);
+    });
+
+    /// ```gherkin
     /// Scenario: Log webhook forward stderr at error level
     ///   Given a temporary project checkout that can be used as the local repo path
     ///   And a gh script that writes a webhook creation failure to stderr while forwarding

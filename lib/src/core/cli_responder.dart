@@ -6,6 +6,14 @@ import '../config/config.dart';
 import '../issue_tracker/issue_tracker_client.dart';
 import 'process_launcher.dart';
 
+enum ResponderInvocationMode {
+  coldStart('cold_start'),
+  resume('resume');
+
+  const ResponderInvocationMode(this.value);
+  final String value;
+}
+
 class CliResponderRunner {
   Future<ResponderResult> run({
     required CliResponderConfig responder,
@@ -13,12 +21,16 @@ class CliResponderRunner {
     required IssueThread thread,
     required String prompt,
     required String workspacePath,
+    String? responderSessionId,
+    ResponderInvocationMode invocationMode = ResponderInvocationMode.coldStart,
   }) async {
     final context = _buildContext(
       project: project,
       thread: thread,
       prompt: prompt,
       workspacePath: workspacePath,
+      responderSessionId: responderSessionId,
+      invocationMode: invocationMode,
     );
 
     var output = await _runProcess(
@@ -33,6 +45,8 @@ class CliResponderRunner {
         thread: thread,
         prompt: _buildJsonRepairPrompt(prompt, output.stdout),
         workspacePath: workspacePath,
+        responderSessionId: responderSessionId,
+        invocationMode: invocationMode,
       );
       final repairOutput = await _runProcess(
         responder: responder,
@@ -69,6 +83,8 @@ class CliResponderRunner {
     required IssueThread thread,
     required String prompt,
     required String workspacePath,
+    required String? responderSessionId,
+    required ResponderInvocationMode invocationMode,
   }) {
     return <String, String>{
       'prompt': prompt,
@@ -78,6 +94,8 @@ class CliResponderRunner {
       'workspace_path': workspacePath,
       'issue_number': thread.issue.number.toString(),
       'thread_json': encodePrettyJson(thread.toJson()),
+      'responder_session_id': responderSessionId ?? '',
+      'invocation_mode': invocationMode.value,
     };
   }
 
@@ -101,6 +119,10 @@ class CliResponderRunner {
         'CWS_PROJECT_PATH': context['project_path'] ?? '',
         'CWS_WORKSPACE_PATH': workspacePath,
         'CWS_ISSUE_NUMBER': context['issue_number'] ?? '',
+        'CWS_RESPONDER_SESSION_ID': context['responder_session_id'] ?? '',
+        'CWS_INVOCATION_MODE':
+            context['invocation_mode'] ??
+            ResponderInvocationMode.coldStart.value,
       },
     );
 
