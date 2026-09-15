@@ -286,14 +286,12 @@ class GiteaGosmeeIssueEventSource implements IssueEventSource {
           'gitea/gosmee webhook accepted project=${project.key} '
           'repo=$fullName action=$action issue=${issue.number} state=${issue.state}',
         );
-        if (issue.state == 'open') {
-          _queuedIssues['${project.key}#${issue.number}'] = _QueuedGiteaIssue(
-            project: project,
-            issue: issue,
-            onBatch: onBatch,
-          );
-          _scheduleFlush();
-        }
+        _queuedIssues['${project.key}#${issue.number}'] = _QueuedGiteaIssue(
+          project: project,
+          issue: issue,
+          onBatch: onBatch,
+        );
+        _scheduleFlush();
       } else {
         _log(
           'gitea/gosmee webhook ignored repo=${fullName ?? "(missing)"} '

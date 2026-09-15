@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
@@ -203,6 +204,17 @@ class IssueAssistantApp {
     );
     final fingerprint = _fingerprintThread(thread);
     final record = await database.findIssueThread(project.key, issue.number);
+    final latestCommentId = thread.latestComment?.id;
+    if (!thread.isOpen) {
+      await _closeIssueLifecycle(
+        project: project,
+        issue: issue,
+        thread: thread,
+        record: record,
+        fingerprint: fingerprint,
+      );
+      return;
+    }
     if (record?.lastEvaluatedFingerprint == fingerprint) {
       _log(
         'skip issue=${project.key}#${issue.number} reason=fingerprint_unchanged',
@@ -242,10 +254,14 @@ class IssueAssistantApp {
     await database.upsertIssueThread(
       projectKey: project.key,
       issueNumber: issue.number,
+      issueState: IssueLifecycleState.opened,
       fingerprint: fingerprint,
       updatedAt: issue.updatedAt,
       lastEvaluatedFingerprint: record?.lastEvaluatedFingerprint,
       lastDecision: record?.lastDecision,
+      lastProcessedCommentId: latestCommentId,
+      responderSessionId: record?.responderSessionId,
+      workspacePath: record?.workspacePath,
       lastCommentId: record?.lastCommentId,
       lastCommentUrl: record?.lastCommentUrl,
     );
@@ -256,10 +272,14 @@ class IssueAssistantApp {
       await database.upsertIssueThread(
         projectKey: project.key,
         issueNumber: issue.number,
+        issueState: IssueLifecycleState.opened,
         fingerprint: fingerprint,
         updatedAt: issue.updatedAt,
         lastEvaluatedFingerprint: fingerprint,
         lastDecision: record?.lastDecision,
+        lastProcessedCommentId: latestCommentId,
+        responderSessionId: record?.responderSessionId,
+        workspacePath: record?.workspacePath,
         lastCommentId: record?.lastCommentId,
         lastCommentUrl: record?.lastCommentUrl,
       );
@@ -280,10 +300,14 @@ class IssueAssistantApp {
       await database.upsertIssueThread(
         projectKey: project.key,
         issueNumber: issue.number,
+        issueState: IssueLifecycleState.opened,
         fingerprint: fingerprint,
         updatedAt: issue.updatedAt,
         lastEvaluatedFingerprint: fingerprint,
         lastDecision: record?.lastDecision,
+        lastProcessedCommentId: latestCommentId,
+        responderSessionId: record?.responderSessionId,
+        workspacePath: record?.workspacePath,
         lastCommentId: record?.lastCommentId,
         lastCommentUrl: record?.lastCommentUrl,
       );
@@ -292,104 +316,110 @@ class IssueAssistantApp {
     }
 
     ResponderResult? selectedResult;
+    String? selectedSessionId;
     Object? lastError;
     final needsWorktree = _looksLikeBugVerification(thread);
-    final workspacePath = await workspaceManager.createEphemeralWorkspace(
-      project,
-    );
+    final workspacePath = await _resolveWorkspacePath(project, record);
     _log(
       'issue=${project.key}#${issue.number} workspace_mode='
       'worktree scm=${project.scm.provider.name} workspace=$workspacePath',
     );
 
-    try {
-      for (final responder in project.issueAssistant.responders) {
-        _log(
-          'run responder=${responder.id} issue=${project.key}#${issue.number} '
-          'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
-          'workspace=$workspacePath',
-        );
+    for (final responder in project.issueAssistant.responders) {
+      final responderSessionId = _responderSessionId(
+        project: project,
+        issueNumber: issue.number,
+        responderId: responder.id,
+      );
+      final invocationMode = record?.responderSessionId == responderSessionId
+          ? ResponderInvocationMode.resume
+          : ResponderInvocationMode.coldStart;
+      _log(
+        'run responder=${responder.id} issue=${project.key}#${issue.number} '
+        'mode_hint=${needsWorktree ? "bug_verification" : "planning"} '
+        'invocation_mode=${invocationMode.value} workspace=$workspacePath',
+      );
 
-        try {
-          final result = await responderRunner.run(
-            responder: responder,
-            project: project,
-            thread: thread,
-            prompt: prompt,
-            workspacePath: workspacePath,
-          );
-          await database.addExecutionRun(
-            jobId: jobId,
-            responderId: result.responderId,
-            mode: result.mode,
-            decision: result.decision,
-            success: true,
-            workspacePath: workspacePath,
-            stdout: result.rawStdout,
-            stderr: result.rawStderr,
-          );
-          _logResponderOutput(
+      try {
+        final result = await responderRunner.run(
+          responder: responder,
+          project: project,
+          thread: thread,
+          prompt: prompt,
+          workspacePath: workspacePath,
+          responderSessionId: responderSessionId,
+          invocationMode: invocationMode,
+        );
+        await database.addExecutionRun(
+          jobId: jobId,
+          responderId: result.responderId,
+          mode: result.mode,
+          decision: result.decision,
+          success: true,
+          workspacePath: workspacePath,
+          stdout: result.rawStdout,
+          stderr: result.rawStderr,
+        );
+        _logResponderOutput(
+          responderId: responder.id,
+          issueKey: '${project.key}#${issue.number}',
+          stdout: result.rawStdout,
+          stderr: result.rawStderr,
+        );
+        _log(
+          'responder=${responder.id} issue=${project.key}#${issue.number}, '
+          'title="${thread.issue.title}", '
+          'decision=${result.decision}, mode=${result.mode}',
+        );
+        selectedResult = result;
+        selectedSessionId = responderSessionId;
+        break;
+      } catch (error) {
+        lastError = error;
+        final rawStdout = switch (error) {
+          CliResponderExecutionException(:final rawStdout) => rawStdout,
+          CliResponderOutputFormatException(:final rawStdout) => rawStdout,
+          _ => '',
+        };
+        final rawStderr = switch (error) {
+          CliResponderExecutionException(:final rawStderr) => rawStderr,
+          CliResponderOutputFormatException(:final rawStderr) => rawStderr,
+          _ => error.toString(),
+        };
+        _logResponderOutput(
+          responderId: responder.id,
+          issueKey: '${project.key}#${issue.number}',
+          stdout: rawStdout,
+          stderr: rawStderr,
+        );
+        _logError(
+          'responder=${responder.id} issue=${project.key}#${issue.number} '
+          'failed error=$error',
+        );
+        await notifierRegistry.notify(
+          event: NotificationEvent.responderFailed,
+          context: NotificationContext(
+            projectKey: project.key,
+            repo: project.repo,
+            issueNumber: issue.number,
+            issueTitle: thread.issue.title,
+            issueUrl: thread.issue.url,
+            trigger: trigger,
             responderId: responder.id,
-            issueKey: '${project.key}#${issue.number}',
-            stdout: result.rawStdout,
-            stderr: result.rawStderr,
-          );
-          _log(
-            'responder=${responder.id} issue=${project.key}#${issue.number}, '
-            'title="${thread.issue.title}", '
-            'decision=${result.decision}, mode=${result.mode}',
-          );
-          selectedResult = result;
-          break;
-        } catch (error) {
-          lastError = error;
-          final rawStdout = switch (error) {
-            CliResponderExecutionException(:final rawStdout) => rawStdout,
-            CliResponderOutputFormatException(:final rawStdout) => rawStdout,
-            _ => '',
-          };
-          final rawStderr = switch (error) {
-            CliResponderExecutionException(:final rawStderr) => rawStderr,
-            CliResponderOutputFormatException(:final rawStderr) => rawStderr,
-            _ => error.toString(),
-          };
-          _logResponderOutput(
-            responderId: responder.id,
-            issueKey: '${project.key}#${issue.number}',
-            stdout: rawStdout,
-            stderr: rawStderr,
-          );
-          _logError(
-            'responder=${responder.id} issue=${project.key}#${issue.number} '
-            'failed error=$error',
-          );
-          await notifierRegistry.notify(
-            event: NotificationEvent.responderFailed,
-            context: NotificationContext(
-              projectKey: project.key,
-              repo: project.repo,
-              issueNumber: issue.number,
-              issueTitle: thread.issue.title,
-              issueUrl: thread.issue.url,
-              trigger: trigger,
-              responderId: responder.id,
-              errorSummary: error.toString(),
-            ),
-          );
-          await database.addExecutionRun(
-            jobId: jobId,
-            responderId: responder.id,
-            mode: 'error',
-            decision: 'no_reply',
-            success: false,
-            workspacePath: workspacePath,
-            stdout: rawStdout,
-            stderr: rawStderr,
-          );
-        }
+            errorSummary: error.toString(),
+          ),
+        );
+        await database.addExecutionRun(
+          jobId: jobId,
+          responderId: responder.id,
+          mode: 'error',
+          decision: 'no_reply',
+          success: false,
+          workspacePath: workspacePath,
+          stdout: rawStdout,
+          stderr: rawStderr,
+        );
       }
-    } finally {
-      await workspaceManager.disposeEphemeralWorkspace(project, workspacePath);
     }
 
     if (selectedResult == null) {
@@ -434,10 +464,14 @@ class IssueAssistantApp {
       await database.upsertIssueThread(
         projectKey: project.key,
         issueNumber: issue.number,
+        issueState: IssueLifecycleState.opened,
         fingerprint: fingerprint,
         updatedAt: issue.updatedAt,
         lastEvaluatedFingerprint: fingerprint,
         lastDecision: selectedResult.decision,
+        lastProcessedCommentId: latestCommentId,
+        responderSessionId: selectedSessionId ?? record?.responderSessionId,
+        workspacePath: workspacePath,
         lastCommentId: record?.lastCommentId,
         lastCommentUrl: record?.lastCommentUrl,
       );
@@ -486,10 +520,14 @@ class IssueAssistantApp {
     await database.upsertIssueThread(
       projectKey: project.key,
       issueNumber: issue.number,
+      issueState: IssueLifecycleState.opened,
       fingerprint: fingerprint,
       updatedAt: issue.updatedAt,
       lastEvaluatedFingerprint: fingerprint,
       lastDecision: selectedResult.decision,
+      lastProcessedCommentId: latestCommentId,
+      responderSessionId: selectedSessionId ?? record?.responderSessionId,
+      workspacePath: workspacePath,
       lastCommentId: posted.id,
       lastCommentUrl: posted.url,
     );
@@ -509,6 +547,59 @@ class IssueAssistantApp {
         decision: selectedResult.decision,
         summary: selectedResult.summary,
       ),
+    );
+  }
+
+  Future<String> _resolveWorkspacePath(
+    ProjectConfig project,
+    IssueThreadState? record,
+  ) async {
+    final existing = record?.workspacePath;
+    if (existing != null && await Directory(existing).exists()) {
+      return existing;
+    }
+    return workspaceManager.createEphemeralWorkspace(project);
+  }
+
+  String _responderSessionId({
+    required ProjectConfig project,
+    required int issueNumber,
+    required String responderId,
+  }) {
+    return '${project.sessionPrefix}-$issueNumber-$responderId';
+  }
+
+  Future<void> _closeIssueLifecycle({
+    required ProjectConfig project,
+    required GitHubIssueSummary issue,
+    required IssueThread thread,
+    required IssueThreadState? record,
+    required String fingerprint,
+  }) async {
+    final existingWorkspacePath = record?.workspacePath;
+    if (existingWorkspacePath != null && existingWorkspacePath.isNotEmpty) {
+      await workspaceManager.disposeEphemeralWorkspace(
+        project,
+        existingWorkspacePath,
+      );
+    }
+    await database.upsertIssueThread(
+      projectKey: project.key,
+      issueNumber: issue.number,
+      issueState: IssueLifecycleState.closed,
+      fingerprint: fingerprint,
+      updatedAt: issue.updatedAt,
+      lastEvaluatedFingerprint: fingerprint,
+      lastDecision: record?.lastDecision,
+      lastProcessedCommentId: thread.latestComment?.id,
+      responderSessionId: null,
+      workspacePath: null,
+      lastCommentId: record?.lastCommentId,
+      lastCommentUrl: record?.lastCommentUrl,
+    );
+    _log(
+      'issue=${project.key}#${issue.number} closed cleanup=done '
+      'removed_workspace=${existingWorkspacePath != null}',
     );
   }
 

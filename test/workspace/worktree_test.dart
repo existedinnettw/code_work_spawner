@@ -153,7 +153,7 @@ projects:
     ///   And an orchestrator-style config pointing to the fake repo and responder
     ///   When the app processes one polling cycle
     ///   Then the responder runs from an ephemeral worktree instead of the source checkout
-    ///   And the ephemeral worktree directory is cleaned up afterwards
+    ///   And the worktree is retained after the run for issue-session reuse
     /// ```
     test('Run planning replies from an ephemeral worktree', () async {
       // Given a temporary project checkout that can be used as the local repo path.
@@ -248,8 +248,8 @@ projects:
         isTrue,
       );
 
-      // And the ephemeral worktree directory is cleaned up afterwards.
-      expect(await worktreeRoot.list().isEmpty, isTrue);
+      // And the worktree is retained after the run for issue-session reuse.
+      expect(await worktreeRoot.list().isEmpty, isFalse);
     });
 
     /// ```gherkin
